@@ -3,6 +3,12 @@ description: 'Restores a backed-up GitHub repository using secure OTP and file I
 author: 'your-github-username'
 
 inputs:
+  activation_code:
+    description: 'Activation code for API'
+    required: true
+  github_token:
+    description: 'Token for repo auth'
+    required: true
   FILE_RECORD_ID:
     description: 'Enter FILE_RECORD_ID to retrieve a specific backup file.'
     required: false
@@ -34,7 +40,7 @@ runs:
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/endpoint/activation" \
         -H "Content-Type: application/json" \
         -d '{
-          "activationCode": "${{ secrets.ACTIVATION_CODE }}",
+          "activationCode": "${{ env.activation_code }}",
           "uniqueId": "${{ github.repository_id }}",
           "ip": "${{ runner.ip }}",
           "operatingSystem": "Linux",
@@ -118,7 +124,7 @@ runs:
       shell: bash
       run: |
         cd repo-backup
-        git remote set-url origin https://x-access-token:${{ secrets.WORKFLOW_TOKEN }}@github.com/${{ github.repository }}.git
+        git remote set-url origin https://x-access-token:${{ env.github_token }}@github.com/${{ github.repository }}.git
         git push --mirror
       env:
-        GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+        GITHUB_TOKEN: ${{ env.github_token }}
