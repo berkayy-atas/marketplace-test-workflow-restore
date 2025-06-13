@@ -118,7 +118,7 @@ runs:
         git config user.email "file-security@myapp.com"
         git config url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf https://github.com/
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ inputs.restore_github_token }}
 
     - name: Push Restored Repository
       shell: bash
