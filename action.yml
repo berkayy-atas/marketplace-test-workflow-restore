@@ -91,6 +91,7 @@ runs:
 
 
     - name: Await OTP Input
+      id: await_otp
       uses: step-security/wait-for-secrets@v1
       with:
         secrets: |
@@ -102,7 +103,6 @@ runs:
       shell: bash
       run: |
         echo "USER_OTP=${{ steps.await_otp.outputs.RESTORE_OTP_INPUT }}" >> $GITHUB_ENV
-        echo "REQUEST_OTP=false" >> $GITHUB_ENV
 
     - name: Retrieve Backup
       shell: bash
