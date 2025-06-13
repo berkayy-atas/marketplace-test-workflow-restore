@@ -64,7 +64,7 @@ runs:
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/Send" \
           -H "Content-Type: application/json" \
-          -H "Authorization: Bearer env.TOKEN" \
+          -H "Authorization: Bearer ${{ env.TOKEN }}" \
           -d '{
             "Source": "FileDownload",
             "OtpGenerationMode": "Number",
@@ -101,7 +101,7 @@ runs:
       shell: bash
       run: |
         curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.FILE_RECORD_ID }}" \
-        -H "Authorization: Bearer env.TOKEN" \
+        -H "Authorization: Bearer ${{ env.TOKEN }}" \
         -H "X-Verification-Key: ${{ env.USER_OTP }}" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}" -o repo.tar.zst
 
