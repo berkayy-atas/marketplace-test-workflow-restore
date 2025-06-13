@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       file_record_id:
-        description: 'Backup File ID'
+        description: 'File Record ID'
         required: true
 
 jobs:
