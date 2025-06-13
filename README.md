@@ -2,7 +2,7 @@
 
 Restores your GitHub repository from secure backups stored in MyApp File Security with end-to-end encryption and OTP verification.
 
-## ⚠️ Notes ⚠️
+## ⚠️ Note
 This is designed for empty repositories — it will overwrite all history
 
 ---
