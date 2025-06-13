@@ -40,7 +40,7 @@ runs:
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/endpoint/activation" \
         -H "Content-Type: application/json" \
         -d '{
-          "activationCode": "${{ env.activation_code }}",
+          "activationCode": "${{ inputs.activation_code }}",
           "uniqueId": "${{ github.repository_id }}",
           "ip": "${{ runner.ip }}",
           "operatingSystem": "Linux",
@@ -63,7 +63,7 @@ runs:
       run: |
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/Send" \
         -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $TOKEN" \
+        -H "Authorization: Bearer env.TOKEN" \
         -d '{
           "Source": "FileDownload",
           "OtpGenerationMode": "Number",
@@ -98,7 +98,7 @@ runs:
       shell: bash
       run: |
         curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.FILE_RECORD_ID }}" \
-        -H "Authorization: Bearer $TOKEN" \
+        -H "Authorization: Bearer env.TOKEN" \
         -H "X-Verification-Key: ${{ env.USER_OTP }}" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}" -o repo.tar.zst
 
@@ -124,7 +124,7 @@ runs:
       shell: bash
       run: |
         cd repo-backup
-        git remote set-url origin https://x-access-token:${{ env.restore_github_token }}@github.com/${{ github.repository }}.git
+        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
         git push --mirror
       env:
-        GITHUB_TOKEN: ${{ env.restore_github_token }}
+        GITHUB_TOKEN: ${{ inputs.restore_github_token }}
