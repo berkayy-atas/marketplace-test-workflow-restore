@@ -113,13 +113,16 @@ runs:
         -H "X-Verification-Key: ${{ env.USER_OTP }}" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}" -o repo.tar.zst
 
-    - name: Extract Backup
+    - name: Extract Backup (If OTP Provided)
       shell: bash
       run: |
+        echo "Extracting repository backup..."
         zstd -d repo.tar.zst -o repo.tar
         mkdir repo-backup
         tar -xf repo.tar -C .
+        ls -la repo-backup
         rm -f repo.tar repo.tar.zst
+        echo "Extraction complete."
 
     - name: Git Configuration
       shell: bash
@@ -137,5 +140,6 @@ runs:
         cd repo-backup
         git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
         git push --mirror
+        echo "Restored backup pushed to repository."
       env:
         GITHUB_TOKEN: ${{ inputs.restore_github_token }}
