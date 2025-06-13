@@ -36,24 +36,22 @@ jobs:
 Follow these steps to set up and run the restore action successfully:
 
 1️⃣ Create a New Blank Repository
-  Go to GitHub – New Repository
-  Create a new empty repository
+  - Go to GitHub – New Repository
+  - Create a new empty repository
 
 
 2️⃣ Create Required Folders
-If working locally:
+  - If working locally:
 
 ```bash
 mkdir -p .github/workflows
 ```
-Or if using the GitHub web UI:
-
-Click "Add file" > "Create new file"
-
-Name it: .github/workflows/restore.yml
+  - Or if using the GitHub web UI:
+  Click "Add file" > "Create new file"
+  - Name it: .github/workflows/restore.yml
 
 3️⃣ Add the Workflow File
-Paste the following content into restore.yml:
+  - Paste the following content into restore.yml:
 
 ```yaml
 name: Restore Repository
@@ -78,13 +76,12 @@ jobs:
           file_record_id: ${{ github.event.inputs.file_record_id }}
 ```
 4️⃣ Add Required Secrets
-
-Go to: Repository → Settings → Secrets and variables → Actions
-Click "New repository secret" and add the following:
+  - Go to: Repository → Settings → Secrets and variables → Actions
+  - Click "New repository secret" and add the following:
 
 Secret Name	Description
-ACTIVATION_CODE:	Your API activation token from File Security
-RESTORE_GITHUB_TOKEN:	A personal access token (PAT) with repo and workflow access (you can claim your token: "Github Settings -> Developer Settings -> Personal access tokens (classic)")
+  - ACTIVATION_CODE:	Your API activation token from File Security
+  - RESTORE_GITHUB_TOKEN:	A personal access token (PAT) with repo and workflow access (you can claim your token: "Github Settings -> Developer Settings -> Personal access tokens (classic)")
 
 5️⃣ Run the Workflow
   - Go to the Actions tab in your GitHub repository
