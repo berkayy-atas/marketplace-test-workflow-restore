@@ -105,23 +105,23 @@ runs:
         echo "REQUEST_OTP=false" >> $GITHUB_ENV
 
     - name: Retrieve Backup
-        shell: bash
-        run: |
-          echo "Retrieving backup file..."
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.FILE_RECORD_ID }}" \
-          -H "Authorization: Bearer $TOKEN" \
-          -H "X-Verification-Key: ${{ env.USER_OTP }}" \
-          -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst)
-          echo "Raw API Response: $RESPONSE"
-          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
-          JSON_BODY=$(echo "$RESPONSE" | head -n -1)
-          if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "Failed to obtain backup file. Response: $RESPONSE"
-            echo "Error: Received HTTP status $HTTP_STATUS"
-            echo "Response: $JSON_BODY"
-            exit 1
-          fi
-          echo "Backup file retrieved successfully."
+      shell: bash
+      run: |
+        echo "Retrieving backup file..."
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.FILE_RECORD_ID }}" \
+        -H "Authorization: Bearer ${{ env.TOKEN }}" \
+        -H "X-Verification-Key: ${{ env.USER_OTP }}" \
+        -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst)
+        echo "Raw API Response: $RESPONSE"
+        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+        JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+        if [ "$HTTP_STATUS" -ne 200 ]; then
+          echo "Failed to obtain backup file. Response: $RESPONSE"
+          echo "Error: Received HTTP status $HTTP_STATUS"
+          echo "Response: $JSON_BODY"
+          exit 1
+        fi
+        echo "Backup file retrieved successfully."
 
     - name: Extract Backup (If OTP Provided)
       shell: bash
