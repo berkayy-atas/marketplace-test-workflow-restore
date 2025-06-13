@@ -1,0 +1,124 @@
+name: 'Repository Restore'
+description: 'Restores a backed-up GitHub repository using secure OTP and file ID through File Security API.'
+author: 'your-github-username'
+
+inputs:
+  FILE_RECORD_ID:
+    description: 'Enter FILE_RECORD_ID to retrieve a specific backup file.'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Check if fileRecordID is Provided
+      id: check_fileRecordID
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.FILE_RECORD_ID }}" ]; then
+          echo "REQUEST_FILE_RECORD_ID=true" >> $GITHUB_ENV
+        else
+          echo "REQUEST_FILE_RECORD_ID=false" >> $GITHUB_ENV
+          echo "USER_FILE_RECORD_ID=${{ inputs.FILE_RECORD_ID }}" >> $GITHUB_ENV
+        fi
+
+    - name: Get Activation Token
+      id: get_token
+      shell: bash
+      run: |
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/endpoint/activation" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "activationCode": "${{ secrets.ACTIVATION_CODE }}",
+          "uniqueId": "${{ github.repository_id }}",
+          "ip": "${{ runner.ip }}",
+          "operatingSystem": "Linux",
+          "endpointType": "Workstation",
+          "endpointName": "Github Endpoint (${{ github.repository }})"
+        }')
+
+        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+        JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+
+        if [ "$HTTP_STATUS" -ne 200 ]; then
+          echo "Failed to get token" && exit 1
+        fi
+
+        echo "TOKEN=$(echo $JSON_BODY | jq -r '.data.token')" >> $GITHUB_ENV
+
+    - name: Request OTP
+      id: request_otp
+      shell: bash
+      run: |
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/Send" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $TOKEN" \
+        -d '{
+          "Source": "FileDownload",
+          "OtpGenerationMode": "Number",
+          "Type": "MAIL"
+        }')
+
+        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+        JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+
+        if [ "$HTTP_STATUS" -ne 200 ]; then
+          echo "OTP request failed" && exit 1
+        fi
+
+        echo "UNIQUE_KEY=$(echo $JSON_BODY | jq -r '.data.uniqueKey')" >> $GITHUB_ENV
+
+    - name: Await OTP Input
+      uses: step-security/wait-for-secrets@v1
+      with:
+        secrets: |
+          RESTORE_OTP_INPUT:
+            name: 'Restore OTP'
+            description: 'Enter OTP received via email'
+
+    - name: Set OTP After Await
+      shell: bash
+      run: |
+        echo "USER_OTP=${{ steps.await_otp.outputs.RESTORE_OTP_INPUT }}" >> $GITHUB_ENV
+        echo "REQUEST_OTP=false" >> $GITHUB_ENV
+
+    - name: Retrieve Backup (If OTP and FILE_RECORD_ID Provided)
+      if: env.REQUEST_FILE_RECORD_ID == 'false'
+      shell: bash
+      run: |
+        curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.FILE_RECORD_ID }}" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "X-Verification-Key: ${{ env.USER_OTP }}" \
+        -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}" -o repo.tar.zst
+
+    - name: Extract Backup
+      shell: bash
+      run: |
+        zstd -d repo.tar.zst -o repo.tar
+        mkdir repo-backup
+        tar -xf repo.tar -C .
+        rm -f repo.tar repo.tar.zst
+
+    - name: Git Configuration
+      shell: bash
+      run: |
+        cd repo-backup
+        git config user.name "myapp File Security"
+        git config user.email "file-security@myapp.com"
+        git config url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf https://github.com/
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push Restored Repository
+      shell: bash
+      run: |
+        cd repo-backup
+        git remote set-url origin https://x-access-token:${{ secrets.WORKFLOW_TOKEN }}@github.com/${{ github.repository }}.git
+        git push --mirror
+      env:
+        GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
