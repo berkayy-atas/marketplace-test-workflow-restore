@@ -6,7 +6,7 @@ inputs:
   activation_code:
     description: 'Activation code for API'
     required: true
-  github_token:
+  restore_github_token:
     description: 'Token for repo auth'
     required: true
   FILE_RECORD_ID:
@@ -124,7 +124,7 @@ runs:
       shell: bash
       run: |
         cd repo-backup
-        git remote set-url origin https://x-access-token:${{ env.github_token }}@github.com/${{ github.repository }}.git
+        git remote set-url origin https://x-access-token:${{ env.restore_github_token }}@github.com/${{ github.repository }}.git
         git push --mirror
       env:
-        GITHUB_TOKEN: ${{ env.github_token }}
+        GITHUB_TOKEN: ${{ env.restore_github_token }}
