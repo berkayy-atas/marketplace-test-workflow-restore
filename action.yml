@@ -58,11 +58,11 @@ runs:
         TOKEN=$(echo "$JSON_BODY" | jq -r '.data.token')
         echo "TOKEN=$TOKEN" >> $GITHUB_ENV
 
-    - name: Request OTP for Restore (If Needed)
-        id: request_otp
-        shell: bash
-        run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/Send" \
+    - name: Request OTP (With Debug Output)
+      shell: bash
+      run: |
+        echo "Requesting OTP..."
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/Send" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ env.TOKEN }}" \
           -d '{
@@ -70,17 +70,25 @@ runs:
             "OtpGenerationMode": "Number",
             "Type": "MAIL"
           }')
-          echo "Raw API Response: $RESPONSE"
-          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
-          JSON_BODY=$(echo "$RESPONSE" | head -n -1)
-          if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "Failed to obtain OTP. Response: $RESPONSE"
-            echo "Error: Received HTTP status $HTTP_STATUS"
-            echo "Response: $JSON_BODY"
-            exit 1
-          fi
-          echo "UNIQUE_KEY=$(echo $JSON_BODY | jq -r '.data.uniqueKey')" >> $GITHUB_ENV
-          echo "OTP request sent. Check email for verification code."
+    
+        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+        JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+    
+        echo "--- RAW API RESPONSE ---"
+        echo "$RESPONSE"
+        echo "-------------------------"
+        echo "HTTP STATUS: $HTTP_STATUS"
+        echo "JSON BODY: $JSON_BODY"
+    
+        if [ "$HTTP_STATUS" -ne 200 ]; then
+          echo "❌ OTP request failed. Status: $HTTP_STATUS"
+          echo "Message: $(echo "$JSON_BODY" | jq -r '.message // .error // .msg // .description // "No error message provided"')"
+          exit 1
+        fi
+    
+        UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
+        echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
+
 
     - name: Await OTP Input
       uses: step-security/wait-for-secrets@v1
