@@ -6,11 +6,11 @@ inputs:
   activation_code:
     description: 'Activation code for API'
     required: true
-  restore_github_token:
-    description: 'Token for repo auth'
+  encryption_key:
+    description: 'Secret key for decrypting the backup'
     required: true
-  FILE_RECORD_ID:
-    description: 'Enter FILE_RECORD_ID to retrieve a specific backup file.'
+  RECORD_ID:
+    description: 'Enter RECORD_ID to retrieve a specific backup file.'
     required: false
     default: ''
 
@@ -26,11 +26,11 @@ runs:
       id: check_fileRecordID
       shell: bash
       run: |
-        if [ -z "${{ inputs.FILE_RECORD_ID }}" ]; then
+        if [ -z "${{ inputs.RECORD_ID }}" ]; then
           echo "REQUEST_FILE_RECORD_ID=true" >> $GITHUB_ENV
         else
           echo "REQUEST_FILE_RECORD_ID=false" >> $GITHUB_ENV
-          echo "USER_FILE_RECORD_ID=${{ inputs.FILE_RECORD_ID }}" >> $GITHUB_ENV
+          echo "USER_FILE_RECORD_ID=${{ inputs.RECORD_ID }}" >> $GITHUB_ENV
         fi
 
     - name: Get Activation Token
@@ -81,7 +81,7 @@ runs:
         echo "JSON BODY: $JSON_BODY"
     
         if [ "$HTTP_STATUS" -ne 200 ]; then
-          echo "❌ OTP request failed. Status: $HTTP_STATUS"
+          echo "OTP request failed. Status: $HTTP_STATUS"
           echo "Message: $(echo "$JSON_BODY" | jq -r '.message // .error // .msg // .description // "No error message provided"')"
           exit 1
         fi
@@ -108,10 +108,10 @@ runs:
       shell: bash
       run: |
         echo "Retrieving backup file..."
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.FILE_RECORD_ID }}" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.RECORD_ID }}" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
         -H "X-Verification-Key: ${{ env.USER_OTP }}" \
-        -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst)
+        -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst.enc)
         echo "Raw API Response: $RESPONSE"
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
         JSON_BODY=$(echo "$RESPONSE" | head -n -1)
@@ -123,16 +123,18 @@ runs:
         fi
         echo "Backup file retrieved successfully."
 
-    - name: Extract Backup (If OTP Provided)
+    - name: Decrypt and Extract Backup
       shell: bash
       run: |
-        echo "Extracting repository backup..."
+        echo "Decryption repository"
+        openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_key }}
+        echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
         mkdir repo-backup
         tar -xf repo.tar -C .
         ls -la repo-backup
         rm -f repo.tar repo.tar.zst
-        echo "Extraction complete."
+        echo "Decryption and extraction complete."
 
     - name: Git Configuration
       shell: bash
@@ -142,14 +144,14 @@ runs:
         git config user.email "file-security@myapp.com"
         git config url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf https://github.com/
       env:
-        GITHUB_TOKEN: ${{ inputs.restore_github_token }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN  }}
 
     - name: Push Restored Repository
       shell: bash
       run: |
         cd repo-backup
-        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN  }}@github.com/${{ github.repository }}.git
         git push --mirror
         echo "Restored backup pushed to repository."
       env:
-        GITHUB_TOKEN: ${{ inputs.restore_github_token }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN  }}
