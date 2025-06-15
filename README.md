@@ -28,7 +28,7 @@ jobs:
         uses: berkayy-atas/marketplace-test-workflow-restore@latest
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
-          restore_github_token: ${{ secrets.RESTORE_GITHUB_TOKEN }}
+          encryption_key: ${{ secrets.ENCRYPTION_KEY }}
           file_record_id: ${{ github.event.inputs.file_record_id }}
 ```
 
@@ -72,7 +72,7 @@ jobs:
         uses: berkayy-atas/marketplace-test-workflow-restore@latest
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
-          restore_github_token: ${{ secrets.RESTORE_GITHUB_TOKEN }}
+          encryption_key: ${{ secrets.ENCRYPTION_KEY }}
           file_record_id: ${{ github.event.inputs.file_record_id }}
 ```
 4️⃣ Add Required Secrets
