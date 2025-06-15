@@ -9,8 +9,8 @@ inputs:
   encryption_key:
     description: 'Secret key for decrypting the backup'
     required: true
-  github_token:
-    description: 'GitHub token'
+  restore_github_token:
+    description: 'Token for repository mirror'
     required: true
   record_id:
     description: 'Enter RECORD_ID to retrieve a specific backup file.'
@@ -134,14 +134,14 @@ runs:
         cd repo-backup
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
-        git config url."https://x-access-token:${{ inputs.github_token }}@github.com/".insteadOf https://github.com/
+        git config url."https://x-access-token:${{ inputs.restore_github_token }}@github.com/".insteadOf https://github.com/
 
 
     - name: Push Restored Repository
       shell: bash
       run: |
         cd repo-backup
-        git remote set-url origin https://x-access-token:${{ inputs.github_token  }}@github.com/${{ github.repository }}.git
+        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token  }}@github.com/${{ github.repository }}.git
         git push --mirror
         echo "Restored backup pushed to repository."
 
