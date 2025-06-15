@@ -140,88 +140,115 @@ runs:
       run: |
         cd repo-mirror
         git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
-        git push --mirror
+        git push --mirror --force
         echo "Code repository restored successfully."
     
     - name: Install GitHub CLI
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y jq
-        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-        sudo apt-get update
-        sudo apt-get install -y gh
+        # Install GH CLI without verbose output
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+        sudo apt-get update -qq
+        sudo apt-get install -y gh jq -qq
 
     - name: Import Repository Metadata
       shell: bash
       run: |
-        # GH_TOKEN çakışmasını önle
-        unset GH_TOKEN
-
-        # Doğrudan token ile kimlik doğrulama
+        # Authenticate GH CLI
         echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
 
-        # Etiketleri içe aktar
+        # Import labels
         jq -c '.data.repository.labels.nodes[]' repo-metadata/labels_milestones.json | while read label; do
           name=$(echo "$label" | jq -r '.name')
           color=$(echo "$label" | jq -r '.color')
           desc=$(echo "$label" | jq -r '.description // ""')
           
-          # Etiket zaten var mı kontrol et
-          if ! gh label list | grep -q "$name"; then
+          if ! gh label list | grep -q "\b$name\b"; then
             gh label create "$name" --color "$color" --description "$desc"
           else
-            echo "Etiket '$name' zaten var, atlanıyor"
+            echo "Skipping existing label: $name"
           fi
         done
 
-        # Milestone'ları içe aktar
+        # Import milestones
         jq -c '.data.repository.milestones.nodes[]' repo-metadata/labels_milestones.json | while read milestone; do
           title=$(echo "$milestone" | jq -r '.title')
           desc=$(echo "$milestone" | jq -r '.description // ""')
           due=$(echo "$milestone" | jq -r '.dueOn // ""')
           
-          # Milestone zaten var mı kontrol et
-          if ! gh milestone list | grep -q "$title"; then
+          if ! gh milestone list | grep -q "\b$title\b"; then
             gh milestone create "$title" --description "$desc" $([ -n "$due" ] && echo "--due-date $due")
           else
-            echo "Milestone '$title' zaten var, atlanıyor"
+            echo "Skipping existing milestone: $title"
           fi
         done
 
-        # Issue'ları içe aktar
+        # Import issues
         jq -c '.[]' repo-metadata/issues.json | while read issue; do
+          title=$(echo "$issue" | jq -r '.title')
+          state=$(echo "$issue" | jq -r '.state')
+          labels=$(echo "$issue" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')
           body=$(echo "$issue" | jq -r '.body' | sed 's/\\n/\\\\n/g')
-          gh issue create \
-            --title "$(echo "$issue" | jq -r '.title')" \
-            --body "$body" \
-            $([ "$(echo "$issue" | jq -r '.state')" = "CLOSED" ] && echo "--closed") \
-            --label "$(echo "$issue" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')"
+          
+          # Create issue
+          gh issue create --title "$title" --body "$body" --label "$labels"
+          
+          # Close if needed
+          if [ "$state" = "CLOSED" ]; then
+            issue_number=$(gh issue list --json number,title -q ".[] | select(.title == \"$title\") | .number")
+            if [ -n "$issue_number" ]; then
+              gh issue close $issue_number
+            fi
+          fi
         done
 
-        # PR'ları içe aktar
-        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
-          body=$(echo "$pr" | jq -r '.body' | sed 's/\\n/\\\\n/g')
-          gh pr create \
-            --title "$(echo "$pr" | jq -r '.title')" \
-            --body "$body" \
-            --base "$(echo "$pr" | jq -r '.baseRefName')" \
-            --head "$(echo "$pr" | jq -r '.headRefName')" \
-            --label "$(echo "$pr" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')"
+        # Import pull requests with branch differentiation
+        cd repo-mirror
+        CURRENT_BRANCH=$(git branch --show-current)
         
-          # PR durumunu güncelle (kapalı/merge edilmiş)
-          if [ "$(echo "$pr" | jq -r '.state')" = "CLOSED" ]; then
-            pr_number=$(gh pr list --json number -q ".[] | select(.title == \"$(echo "$pr" | jq -r '.title')\") | .number")
+        jq -c '.[]' ../repo-metadata/pull_requests.json | while read pr; do
+          base_branch=$(echo "$pr" | jq -r '.baseRefName')
+          head_branch=$(echo "$pr" | jq -r '.headRefName')
+          title=$(echo "$pr" | jq -r '.title')
+          state=$(echo "$pr" | jq -r '.state')
+          labels=$(echo "$pr" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')
+          body=$(echo "$pr" | jq -r '.body' | sed 's/\\n/\\\\n/g')
+          
+          # Switch to head branch
+          git checkout -b $head_branch origin/$base_branch 2>/dev/null || git checkout $head_branch
+          
+          # Create differentiation commit if branches are identical
+          if [ "$(git rev-parse $base_branch)" = "$(git rev-parse $head_branch)" ]; then
+            echo "Creating differentiation commit on $head_branch"
+            touch "pr_diff_$head_branch"
+            git add "pr_diff_$head_branch"
+            git commit -m "PR differentiation commit"
+            git push origin $head_branch
+          fi
+          
+          # Create PR
+          pr_url=$(gh pr create \
+            --title "$title" \
+            --body "$body" \
+            --base $base_branch \
+            --head $head_branch \
+            --label "$labels")
+            
+          # Get PR number
+          pr_number=$(echo $pr_url | grep -oE '[0-9]+$')
+          
+          # Update PR state
+          if [ "$state" = "CLOSED" ]; then
             gh pr close $pr_number
-          elif [ "$(echo "$pr" | jq -r '.state')" = "MERGED" ]; then
-            pr_number=$(gh pr list --json number -q ".[] | select(.title == \"$(echo "$pr" | jq -r '.title')\") | .number")
+          elif [ "$state" = "MERGED" ]; then
             gh pr merge $pr_number --merge
           fi
         done
-      env:
-        # Ortam değişkeni çakışmasını önle
-        GITHUB_TOKEN: ""
+        
+        # Restore original branch
+        git checkout $CURRENT_BRANCH
+        cd ..
           
 
 
