@@ -156,52 +156,73 @@ runs:
     - name: Import Repository Metadata
       shell: bash
       run: |
-        # Authenticate gh CLI
-        echo "${{ inputs.restore_github_token }}" > token.txt
-        gh auth login --with-token < token.txt
-        rm token.txt
+        # GH_TOKEN çakışmasını önle
+        unset GH_TOKEN
 
-        # Import labels and milestones
+        # Doğrudan token ile kimlik doğrulama
+        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
+
+        # Etiketleri içe aktar
         jq -c '.data.repository.labels.nodes[]' repo-metadata/labels_milestones.json | while read label; do
           name=$(echo "$label" | jq -r '.name')
           color=$(echo "$label" | jq -r '.color')
           desc=$(echo "$label" | jq -r '.description // ""')
-          gh label create "$name" --color "$color" --description "$desc"
+          
+          # Etiket zaten var mı kontrol et
+          if ! gh label list | grep -q "$name"; then
+            gh label create "$name" --color "$color" --description "$desc"
+          else
+            echo "Etiket '$name' zaten var, atlanıyor"
+          fi
         done
 
+        # Milestone'ları içe aktar
         jq -c '.data.repository.milestones.nodes[]' repo-metadata/labels_milestones.json | while read milestone; do
           title=$(echo "$milestone" | jq -r '.title')
-          state=$(echo "$milestone" | jq -r '.state')
           desc=$(echo "$milestone" | jq -r '.description // ""')
           due=$(echo "$milestone" | jq -r '.dueOn // ""')
-          gh milestone create "$title" --description "$desc" $([ -n "$due" ] && echo "--due-date $due")
+          
+          # Milestone zaten var mı kontrol et
+          if ! gh milestone list | grep -q "$title"; then
+            gh milestone create "$title" --description "$desc" $([ -n "$due" ] && echo "--due-date $due")
+          else
+            echo "Milestone '$title' zaten var, atlanıyor"
+          fi
         done
 
-        # Import issues
+        # Issue'ları içe aktar
         jq -c '.[]' repo-metadata/issues.json | while read issue; do
-          body=$(echo "$issue" | jq -r '.body' | base64 -w0)
+          body=$(echo "$issue" | jq -r '.body' | sed 's/\\n/\\\\n/g')
           gh issue create \
             --title "$(echo "$issue" | jq -r '.title')" \
-            --body "$(base64 -d <<< "$body")" \
+            --body "$body" \
             $([ "$(echo "$issue" | jq -r '.state')" = "CLOSED" ] && echo "--closed") \
             --label "$(echo "$issue" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')"
         done
 
-        # Import pull requests
+        # PR'ları içe aktar
         jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
-          body=$(echo "$pr" | jq -r '.body' | base64 -w0)
+          body=$(echo "$pr" | jq -r '.body' | sed 's/\\n/\\\\n/g')
           gh pr create \
             --title "$(echo "$pr" | jq -r '.title')" \
-            --body "$(base64 -d <<< "$body")" \
+            --body "$body" \
             --base "$(echo "$pr" | jq -r '.baseRefName')" \
             --head "$(echo "$pr" | jq -r '.headRefName')" \
-            $([ "$(echo "$pr" | jq -r '.state')" = "CLOSED" ] && echo "--closed") \
-            $([ "$(echo "$pr" | jq -r '.state')" = "MERGED" ] && echo "--merged") \
             --label "$(echo "$pr" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')"
-        done
-      env:
-        GH_TOKEN: ${{ inputs.restore_github_token }}
         
+          # PR durumunu güncelle (kapalı/merge edilmiş)
+          if [ "$(echo "$pr" | jq -r '.state')" = "CLOSED" ]; then
+            pr_number=$(gh pr list --json number -q ".[] | select(.title == \"$(echo "$pr" | jq -r '.title')\") | .number")
+            gh pr close $pr_number
+          elif [ "$(echo "$pr" | jq -r '.state')" = "MERGED" ]; then
+            pr_number=$(gh pr list --json number -q ".[] | select(.title == \"$(echo "$pr" | jq -r '.title')\") | .number")
+            gh pr merge $pr_number --merge
+          fi
+        done
+    env:
+      # Ortam değişkeni çakışmasını önle
+      GITHUB_TOKEN: ""
+          
 
 
     
