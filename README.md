@@ -29,7 +29,7 @@ jobs:
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
-          restore_github_token: ${{ RESTORE_GITHUB_TOKEN }}
+          restore_github_token: ${{ secrets.RESTORE_GITHUB_TOKEN }}
           record_id: ${{ github.event.inputs.RECORD_ID }}
 ```
 
@@ -74,7 +74,7 @@ jobs:
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
-          restore_github_token: ${{ RESTORE_GITHUB_TOKEN }}
+          restore_github_token: ${{ secrets.RESTORE_GITHUB_TOKEN }}
           record_id: ${{ github.event.inputs.RECORD_ID }}
 ```
 4️⃣ Add Required Secrets
@@ -84,6 +84,7 @@ jobs:
 Secret Name	Description
   - ACTIVATION_CODE:	Your API activation token from File Security
   - RESTORE_GITHUB_TOKEN:	A personal access token (PAT) with repo and workflow access (you can claim your token: "Github Settings -> Developer Settings -> Personal access tokens (classic)")
+  - ENCRYPTION_KEY: A key to open the shielded file
 
 5️⃣ Run the Workflow
   - Go to the Actions tab in your GitHub repository
