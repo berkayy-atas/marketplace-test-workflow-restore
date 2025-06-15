@@ -29,6 +29,7 @@ jobs:
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
+          restore_github_token: ${{ RESTORE_GITHUB_TOKEN }}
           record_id: ${{ github.event.inputs.RECORD_ID }}
 ```
 
@@ -73,6 +74,7 @@ jobs:
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
+          restore_github_token: ${{ RESTORE_GITHUB_TOKEN }}
           record_id: ${{ github.event.inputs.RECORD_ID }}
 ```
 4️⃣ Add Required Secrets
