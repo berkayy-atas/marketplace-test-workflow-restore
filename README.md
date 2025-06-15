@@ -15,8 +15,8 @@ name: Restore Repository
 on:
   workflow_dispatch:
     inputs:
-      file_record_id:
-        description: 'File Record ID'
+      record_id:
+        description: 'Record ID'
         required: true
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
-          file_record_id: ${{ github.event.inputs.file_record_id }}
+          record_id: ${{ github.event.inputs.RECORD_ID }}
 ```
 
 ##  🚀 How to Use in a Blank Repository
@@ -59,8 +59,8 @@ name: Restore Repository
 on:
   workflow_dispatch:
     inputs:
-      file_record_id:
-        description: 'File Record ID'
+      record_id:
+        description: 'Record ID'
         required: true
 
 jobs:
@@ -73,7 +73,7 @@ jobs:
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
-          file_record_id: ${{ github.event.inputs.file_record_id }}
+          record_id: ${{ github.event.inputs.RECORD_ID }}
 ```
 4️⃣ Add Required Secrets
   - Go to: Repository → Settings → Secrets and variables → Actions
