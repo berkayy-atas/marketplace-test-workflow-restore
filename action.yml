@@ -219,9 +219,9 @@ runs:
             gh pr merge $pr_number --merge
           fi
         done
-    env:
-      # Ortam değişkeni çakışmasını önle
-      GITHUB_TOKEN: ""
+      env:
+        # Ortam değişkeni çakışmasını önle
+        GITHUB_TOKEN: ""
           
 
 
