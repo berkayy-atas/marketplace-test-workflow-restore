@@ -205,37 +205,4 @@ runs:
           fi
         done
 
-        # PR'ları içe aktar (yeni repo için)
-        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
-          base_branch=$(echo "$pr" | jq -r '.baseRefName')
-          head_branch=$(echo "$pr" | jq -r '.headRefName')
-          title=$(echo "$pr" | jq -r '.title')
-          state=$(echo "$pr" | jq -r '.state')
-          labels=$(echo "$pr" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')
-          body=$(echo "$pr" | jq -r '.body')
-          
-          # Base64 encoding ile güvenli taşıma
-          encoded_body=$(echo "$body" | base64 -w0)
-          decoded_body=$(echo "$encoded_body" | base64 -d)
-          
-          # PR oluştur
-          pr_url=$(gh pr create \
-            --title "$title" \
-            --body "$decoded_body" \
-            --base $base_branch \
-            --head $head_branch \
-            --label "$labels")
-            
-          # PR numarasını al
-          pr_number=$(echo $pr_url | grep -oE '[0-9]+$')
-          
-          # PR durumunu güncelle
-          if [ -n "$pr_number" ]; then
-            if [ "$state" = "CLOSED" ]; then
-              gh pr close $pr_number
-            elif [ "$state" = "MERGED" ]; then
-              gh pr merge $pr_number --merge
-            fi
-          fi
-        done
-
+    
