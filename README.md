@@ -83,8 +83,9 @@ jobs:
 
 Secret Name	Description
   - ACTIVATION_CODE:	Your API activation token from File Security
-  - RESTORE_GITHUB_TOKEN:	A personal access token (PAT) with repo and workflow access (you can claim your token: "Github Settings -> Developer Settings -> Personal access tokens (classic)")
+  - RESTORE_GITHUB_TOKEN:	A personal access token (PAT) with repo and workflow access (you can claim your token: "Github Settings -> Developer Settings -> Personal access tokens (classic)") [Scopes: repo, workflow, admin:org, write:discussion] 
   - ENCRYPTION_KEY: A key to open the shielded file
+
 
 5️⃣ Run the Workflow
   - Go to the Actions tab in your GitHub repository
