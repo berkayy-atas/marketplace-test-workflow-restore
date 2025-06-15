@@ -122,7 +122,7 @@ runs:
         openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_key }}
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
-        mkdir repo-backup
+        mkdir repo-mirror repo-metadata
         tar -xf repo.tar -C .
         ls -la repo-backup
         rm -f repo.tar repo.tar.zst
@@ -131,17 +131,78 @@ runs:
     - name: Git Configuration
       shell: bash
       run: |
-        cd repo-backup
+        cd repo-mirror
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         git config url."https://x-access-token:${{ inputs.restore_github_token }}@github.com/".insteadOf https://github.com/
 
-
     - name: Push Restored Repository
       shell: bash
       run: |
-        cd repo-backup
-        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token  }}@github.com/${{ github.repository }}.git
+        cd repo-mirror
+        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
         git push --mirror
-        echo "Restored backup pushed to repository."
+        echo "Code repository restored successfully."
+    
+    - name: Install GitHub CLI
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+        sudo apt-get update
+        sudo apt-get install -y gh
 
+    - name: Import Repository Metadata
+      shell: bash
+      run: |
+        # Authenticate gh CLI
+        echo "${{ inputs.restore_github_token }}" > token.txt
+        gh auth login --with-token < token.txt
+        rm token.txt
+
+        # Import labels and milestones
+        jq -c '.data.repository.labels.nodes[]' repo-metadata/labels_milestones.json | while read label; do
+          name=$(echo "$label" | jq -r '.name')
+          color=$(echo "$label" | jq -r '.color')
+          desc=$(echo "$label" | jq -r '.description // ""')
+          gh label create "$name" --color "$color" --description "$desc"
+        done
+
+        jq -c '.data.repository.milestones.nodes[]' repo-metadata/labels_milestones.json | while read milestone; do
+          title=$(echo "$milestone" | jq -r '.title')
+          state=$(echo "$milestone" | jq -r '.state')
+          desc=$(echo "$milestone" | jq -r '.description // ""')
+          due=$(echo "$milestone" | jq -r '.dueOn // ""')
+          gh milestone create "$title" --description "$desc" $([ -n "$due" ] && echo "--due-date $due")
+        done
+
+        # Import issues
+        jq -c '.[]' repo-metadata/issues.json | while read issue; do
+          body=$(echo "$issue" | jq -r '.body' | base64 -w0)
+          gh issue create \
+            --title "$(echo "$issue" | jq -r '.title')" \
+            --body "$(base64 -d <<< "$body")" \
+            $([ "$(echo "$issue" | jq -r '.state')" = "CLOSED" ] && echo "--closed") \
+            --label "$(echo "$issue" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')"
+        done
+
+        # Import pull requests
+        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
+          body=$(echo "$pr" | jq -r '.body' | base64 -w0)
+          gh pr create \
+            --title "$(echo "$pr" | jq -r '.title')" \
+            --body "$(base64 -d <<< "$body")" \
+            --base "$(echo "$pr" | jq -r '.baseRefName')" \
+            --head "$(echo "$pr" | jq -r '.headRefName')" \
+            $([ "$(echo "$pr" | jq -r '.state')" = "CLOSED" ] && echo "--closed") \
+            $([ "$(echo "$pr" | jq -r '.state')" = "MERGED" ] && echo "--merged") \
+            --label "$(echo "$pr" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')"
+        done
+      env:
+        GH_TOKEN: ${{ inputs.restore_github_token }}
+        
+
+
+    
