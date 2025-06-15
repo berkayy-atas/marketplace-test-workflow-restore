@@ -124,7 +124,6 @@ runs:
         zstd -d repo.tar.zst -o repo.tar
         mkdir repo-mirror repo-metadata
         tar -xf repo.tar -C .
-        ls -la repo-backup
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
 
