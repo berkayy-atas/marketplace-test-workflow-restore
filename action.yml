@@ -9,7 +9,7 @@ inputs:
   encryption_key:
     description: 'Secret key for decrypting the backup'
     required: true
-  RECORD_ID:
+  record_id:
     description: 'Enter RECORD_ID to retrieve a specific backup file.'
     required: false
     default: ''
@@ -21,17 +21,6 @@ runs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-
-    - name: Check if fileRecordID is Provided
-      id: check_fileRecordID
-      shell: bash
-      run: |
-        if [ -z "${{ inputs.RECORD_ID }}" ]; then
-          echo "REQUEST_FILE_RECORD_ID=true" >> $GITHUB_ENV
-        else
-          echo "REQUEST_FILE_RECORD_ID=false" >> $GITHUB_ENV
-          echo "USER_FILE_RECORD_ID=${{ inputs.RECORD_ID }}" >> $GITHUB_ENV
-        fi
 
     - name: Get Activation Token
       id: get_token
@@ -108,7 +97,7 @@ runs:
       shell: bash
       run: |
         echo "Retrieving backup file..."
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.RECORD_ID }}" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.record_id }}" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
         -H "X-Verification-Key: ${{ env.USER_OTP }}" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst.enc)
