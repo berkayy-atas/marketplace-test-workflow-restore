@@ -155,46 +155,48 @@ runs:
     - name: Import Repository Metadata
       shell: bash
       run: |
-        # Authenticate GH CLI
+        # GH CLI kimlik doğrulama
         echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
 
-        # Import labels
+        # Etiketleri içe aktar
         jq -c '.data.repository.labels.nodes[]' repo-metadata/labels_milestones.json | while read label; do
           name=$(echo "$label" | jq -r '.name')
           color=$(echo "$label" | jq -r '.color')
           desc=$(echo "$label" | jq -r '.description // ""')
           
-          if ! gh label list | grep -q "\b$name\b"; then
+          if ! gh label list | grep -qw "$name"; then
             gh label create "$name" --color "$color" --description "$desc"
           else
             echo "Skipping existing label: $name"
           fi
         done
 
-        # Import milestones
+        # Milestone'ları içe aktar
         jq -c '.data.repository.milestones.nodes[]' repo-metadata/labels_milestones.json | while read milestone; do
           title=$(echo "$milestone" | jq -r '.title')
           desc=$(echo "$milestone" | jq -r '.description // ""')
           due=$(echo "$milestone" | jq -r '.dueOn // ""')
           
-          if ! gh milestone list | grep -q "\b$title\b"; then
+          if ! gh milestone list | grep -qw "$title"; then
             gh milestone create "$title" --description "$desc" $([ -n "$due" ] && echo "--due-date $due")
           else
             echo "Skipping existing milestone: $title"
           fi
         done
 
-        # Import issues
+        # Issue'ları içe aktar
         jq -c '.[]' repo-metadata/issues.json | while read issue; do
           title=$(echo "$issue" | jq -r '.title')
           state=$(echo "$issue" | jq -r '.state')
           labels=$(echo "$issue" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')
-          body=$(echo "$issue" | jq -r '.body' | sed 's/\\n/\\\\n/g')
+          body=$(echo "$issue" | jq -r '.body')
           
-          # Create issue
-          gh issue create --title "$title" --body "$body" --label "$labels"
+          # Base64 encoding ile güvenli taşıma
+          encoded_body=$(echo "$body" | base64 -w0)
+          decoded_body=$(echo "$encoded_body" | base64 -d)
           
-          # Close if needed
+          gh issue create --title "$title" --body "$decoded_body" --label "$labels"
+          
           if [ "$state" = "CLOSED" ]; then
             issue_number=$(gh issue list --json number,title -q ".[] | select(.title == \"$title\") | .number")
             if [ -n "$issue_number" ]; then
@@ -203,53 +205,37 @@ runs:
           fi
         done
 
-        # Import pull requests with branch differentiation
-        cd repo-mirror
-        CURRENT_BRANCH=$(git branch --show-current)
-        
-        jq -c '.[]' ../repo-metadata/pull_requests.json | while read pr; do
+        # PR'ları içe aktar (yeni repo için)
+        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
           base_branch=$(echo "$pr" | jq -r '.baseRefName')
           head_branch=$(echo "$pr" | jq -r '.headRefName')
           title=$(echo "$pr" | jq -r '.title')
           state=$(echo "$pr" | jq -r '.state')
           labels=$(echo "$pr" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')
-          body=$(echo "$pr" | jq -r '.body' | sed 's/\\n/\\\\n/g')
+          body=$(echo "$pr" | jq -r '.body')
           
-          # Switch to head branch
-          git checkout -b $head_branch origin/$base_branch 2>/dev/null || git checkout $head_branch
+          # Base64 encoding ile güvenli taşıma
+          encoded_body=$(echo "$body" | base64 -w0)
+          decoded_body=$(echo "$encoded_body" | base64 -d)
           
-          # Create differentiation commit if branches are identical
-          if [ "$(git rev-parse $base_branch)" = "$(git rev-parse $head_branch)" ]; then
-            echo "Creating differentiation commit on $head_branch"
-            touch "pr_diff_$head_branch"
-            git add "pr_diff_$head_branch"
-            git commit -m "PR differentiation commit"
-            git push origin $head_branch
-          fi
-          
-          # Create PR
+          # PR oluştur
           pr_url=$(gh pr create \
             --title "$title" \
-            --body "$body" \
+            --body "$decoded_body" \
             --base $base_branch \
             --head $head_branch \
             --label "$labels")
             
-          # Get PR number
+          # PR numarasını al
           pr_number=$(echo $pr_url | grep -oE '[0-9]+$')
           
-          # Update PR state
-          if [ "$state" = "CLOSED" ]; then
-            gh pr close $pr_number
-          elif [ "$state" = "MERGED" ]; then
-            gh pr merge $pr_number --merge
+          # PR durumunu güncelle
+          if [ -n "$pr_number" ]; then
+            if [ "$state" = "CLOSED" ]; then
+              gh pr close $pr_number
+            elif [ "$state" = "MERGED" ]; then
+              gh pr merge $pr_number --merge
+            fi
           fi
         done
-        
-        # Restore original branch
-        git checkout $CURRENT_BRANCH
-        cd ..
-          
 
-
-    
