@@ -250,47 +250,53 @@ runs:
         done
         echo "Issue restoration completed."
 
-    - name: Restore Pull Requests (as Issues)
+     - name: Restore Pull Requests
       shell: bash
       run: |
-        echo "Restoring pull requests as issues..."
+        echo "Restoring pull requests..."
         jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
-          pr_title=$(jq -r '.title' <<< "$pr")
-          title="[PR] #$(jq -r '.number' <<< "$pr"): $pr_title"
+          title=$(jq -r '.title' <<< "$pr")
+          body=$(jq -r '.body' <<< "$pr")
           head_ref=$(jq -r '.headRefName' <<< "$pr")
           base_ref=$(jq -r '.baseRefName' <<< "$pr")
-          pr_body=$(jq -r '.body' <<< "$pr")
+          pr_number=$(jq -r '.number' <<< "$pr")
           state=$(jq -r '.state' <<< "$pr")
+          merged=$(jq -r '.merged' <<< "$pr")
           labels=$(jq -r '.labels[].name' <<< "$pr" | tr '\n' ',' | sed 's/,$//')
           
-          # Enhanced body with PR metadata
-          enhanced_body="## Restored Pull Request Metadata
-          - **Source Branch:** \`$head_ref\`  
-          - **Target Branch:** \`$base_ref\`  
-          - **Original State:** $state
-          - **Original PR Number:** #$(jq -r '.number' <<< "$pr")
-          - **Created At:** $(jq -r '.createdAt' <<< "$pr")
-          - **Closed At:** $(jq -r '.closedAt // "N/A"' <<< "$pr")
-          - **Merged At:** $(jq -r '.mergedAt // "N/A"' <<< "$pr")
+          # PR'ı oluştur
+          echo "Creating PR: $title (from $head_ref to $base_ref)"
+          gh pr create --title "$title" --body "$body" --head "$head_ref" --base "$base_ref" --label "$labels"
           
-          ## Original PR Description
-          $pr_body"
+          # PR durumunu güncelle
+          new_pr_number=$(gh pr list --json number,title -q ".[] | select(.title == \"$title\") | .number")
           
-          # Skip if PR issue already exists
-          if gh issue list --json title -q ".[] | select(.title == \"$title\")" | grep -q .; then
-            echo "Skipping existing PR issue: $title"
-            continue
-          fi
-          
-          echo "Creating PR issue: $title"
-          gh issue create --title "$title" --body "$enhanced_body" --label "$labels"
-          
-          if [ "$state" != "OPEN" ]; then
-            issue_number=$(gh issue list --json number,title -q ".[] | select(.title == \"$title\") | .number")
-            if [ -n "$issue_number" ]; then
-              echo "Closing PR issue: $title"
-              gh issue close "$issue_number"
+          if [ "$state" != "OPEN" ] || [ "$merged" = "true" ]; then
+            if [ "$merged" = "true" ]; then
+              echo "Merging PR #$new_pr_number"
+              gh pr merge "$new_pr_number" --merge
+            else
+              echo "Closing PR #$new_pr_number"
+              gh pr close "$new_pr_number"
             fi
           fi
         done
-        echo "PR restoration as issues completed."
+        echo "Pull request restoration completed."
+
+    - name: Restore Branches for Pull Requests
+      shell: bash
+      run: |
+        echo "Ensuring all branches exist for pull requests..."
+        jq -c '.data.repository.refs.nodes[]' repo-metadata/branches.json | while read branch; do
+          branch_name=$(echo "$branch" | jq -r '.name')
+          commit_sha=$(echo "$branch" | jq -r '.target.oid')
+          
+          # Branch'in zaten var olup olmadığını kontrol et
+          if ! git show-ref --verify --quiet refs/heads/"$branch_name"; then
+            echo "Creating branch: $branch_name at $commit_sha"
+            git branch "$branch_name" "$commit_sha"
+            git push origin "$branch_name"
+          else
+            echo "Branch already exists: $branch_name"
+          fi
+        done
