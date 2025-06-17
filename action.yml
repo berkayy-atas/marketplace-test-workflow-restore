@@ -250,6 +250,24 @@ runs:
         done
         echo "Issue restoration completed."
 
+    - name: Restore Branches for Pull Requests
+      shell: bash
+      run: |
+        echo "Ensuring all branches exist for pull requests..."
+        jq -c '.data.repository.refs.nodes[]' repo-metadata/branches.json | while read branch; do
+          branch_name=$(echo "$branch" | jq -r '.name')
+          commit_sha=$(echo "$branch" | jq -r '.target.oid')
+          
+          # Branch'in zaten var olup olmadığını kontrol et
+          if ! git show-ref --verify --quiet refs/heads/"$branch_name"; then
+            echo "Creating branch: $branch_name at $commit_sha"
+            git branch "$branch_name" "$commit_sha"
+            git push origin "$branch_name"
+          else
+            echo "Branch already exists: $branch_name"
+          fi
+        done
+
     - name: Restore Pull Requests
       shell: bash
       run: |
@@ -282,21 +300,3 @@ runs:
           fi
         done
         echo "Pull request restoration completed."
-
-    - name: Restore Branches for Pull Requests
-      shell: bash
-      run: |
-        echo "Ensuring all branches exist for pull requests..."
-        jq -c '.data.repository.refs.nodes[]' repo-metadata/branches.json | while read branch; do
-          branch_name=$(echo "$branch" | jq -r '.name')
-          commit_sha=$(echo "$branch" | jq -r '.target.oid')
-          
-          # Branch'in zaten var olup olmadığını kontrol et
-          if ! git show-ref --verify --quiet refs/heads/"$branch_name"; then
-            echo "Creating branch: $branch_name at $commit_sha"
-            git branch "$branch_name" "$commit_sha"
-            git push origin "$branch_name"
-          else
-            echo "Branch already exists: $branch_name"
-          fi
-        done
