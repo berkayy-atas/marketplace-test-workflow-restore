@@ -135,14 +135,6 @@ runs:
         git config user.email "file-security@myapp.com"
         git config url."https://x-access-token:${{ inputs.restore_github_token }}@github.com/".insteadOf https://github.com/
 
-    - name: Push Restored Repository
-      shell: bash
-      run: |
-        cd repo-mirror
-        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
-        git push --mirror --force
-        echo "Code repository restored successfully."
-    
     - name: Install GitHub CLI
       shell: bash
       run: |
@@ -151,57 +143,115 @@ runs:
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
         sudo apt-get update -qq
         sudo apt-get install -y gh jq -qq
+        
+    - name: Push Restored Repository
+      shell: bash
+      run: |
+        cd repo-mirror
+        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
+        
+        # Temporarily disable branch protections
+        protected_branches=$(gh api -X GET "/repos/${{ github.repository }}/branches?protected=true" -q '.[].name' 2>/dev/null || echo "")
+        for branch in $protected_branches; do
+          gh api -X DELETE "/repos/${{ github.repository }}/branches/$branch/protection"
+        done
+        
+        git push --mirror --force
+        
+        # Re-enable branch protections
+        for branch in $protected_branches; do
+          echo "Re-enabling protection for $branch"
+          gh api -X PUT "/repos/${{ github.repository }}/branches/$branch/protection" \
+            -f '{
+              "required_status_checks": null,
+              "enforce_admins": true,
+              "required_pull_request_reviews": null,
+              "restrictions": null
+            }'
+        done
+        
+        echo "Code repository restored successfully."
+  
+
+    - name: Restore Branches and Pull Requests
+      shell: bash
+      run: |
+        # Tüm branch'leri geri yükle
+        jq -c '.data.repository.refs.nodes[]' repo-metadata/branches.json | while read branch; do
+          branch_name=$(echo "$branch" | jq -r '.name')
+          commit_sha=$(echo "$branch" | jq -r '.target.oid')
+          
+          # Branch'i oluştur ve commit'e işaret et
+          git checkout -b "$branch_name" "$commit_sha"
+          git push origin "$branch_name"
+        done
+
+        # PR'ları orijinal durumlarına getir
+        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
+          pr_state=$(echo "$pr" | jq -r '.state')
+          pr_number=$(echo "$pr" | jq -r '.number')
+          
+          if [ "$pr_state" == "CLOSED" ]; then
+            gh pr close "$pr_number"
+          elif [ "$pr_state" == "MERGED" ]; then
+            # PR'ı merge et (simüle etmek için)
+            gh pr merge "$pr_number" --merge
+          fi
+        done
+      env:
+        GH_TOKEN: ${{ inputs.restore_github_token }}
 
     - name: Import Repository Metadata
       shell: bash
       run: |
-        # GH CLI kimlik doğrulama
-        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
-
-        # Etiketleri içe aktar
+        # Restore labels
         jq -c '.data.repository.labels.nodes[]' repo-metadata/labels_milestones.json | while read label; do
-          name=$(echo "$label" | jq -r '.name')
-          color=$(echo "$label" | jq -r '.color')
-          desc=$(echo "$label" | jq -r '.description // ""')
-          
-          if ! gh label list | grep -qw "$name"; then
-            gh label create "$name" --color "$color" --description "$desc"
-          else
-            echo "Skipping existing label: $name"
-          fi
+          name=$(jq -r '.name' <<< "$label")
+          gh label create "$name" --color "$(jq -r '.color' <<< "$label")" --description "$(jq -r '.description // ""' <<< "$label")" || true
         done
-
-        # Milestone'ları içe aktar
+        
+        # Restore milestones
         jq -c '.data.repository.milestones.nodes[]' repo-metadata/labels_milestones.json | while read milestone; do
-          title=$(echo "$milestone" | jq -r '.title')
-          desc=$(echo "$milestone" | jq -r '.description // ""')
-          due=$(echo "$milestone" | jq -r '.dueOn // ""')
-          
-          if ! gh milestone list | grep -qw "$title"; then
-            gh milestone create "$title" --description "$desc" $([ -n "$due" ] && echo "--due-date $due")
-          else
-            echo "Skipping existing milestone: $title"
+          title=$(jq -r '.title' <<< "$milestone")
+          gh milestone create "$title" \
+            --description "$(jq -r '.description // ""' <<< "$milestone")" \
+            --due-date "$(jq -r '.dueOn // ""' <<< "$milestone")" || true
+        done
+        
+        # Restore issues
+        jq -c '.[]' repo-metadata/issues.json | while read issue; do
+          body=$(jq -r '.body' <<< "$issue")
+          gh issue create \
+            --title "$(jq -r '.title' <<< "$issue")" \
+            --body "$body" \
+            --label "$(jq -r '.labels[].name' <<< "$issue" | tr '\n' ',' | sed 's/,$//')" || true
+            
+          if [ "$(jq -r '.state' <<< "$issue")" = "CLOSED" ]; then
+            issue_number=$(gh issue list --json number,title -q ".[] | select(.title == \"$(jq -r '.title' <<< "$issue")\") | .number")
+            gh issue close "$issue_number" || true
           fi
         done
-
-        # Issue'ları içe aktar
-        jq -c '.[]' repo-metadata/issues.json | while read issue; do
-          title=$(echo "$issue" | jq -r '.title')
-          state=$(echo "$issue" | jq -r '.state')
-          labels=$(echo "$issue" | jq -r '.labels[].name' | tr '\n' ',' | sed 's/,$//')
-          body=$(echo "$issue" | jq -r '.body')
+        
+        # Restore PRs as issues
+        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
+          head_ref=$(jq -r '.headRefName' <<< "$pr")
+          base_ref=$(jq -r '.baseRefName' <<< "$pr")
+          pr_body=$(jq -r '.body' <<< "$pr")
+          enhanced_body="## Restored Pull Request
+          **From:** \`$head_ref\`  
+          **To:** \`$base_ref\`  
+          **Original State:** $(jq -r '.state' <<< "$pr")
           
-          # Base64 encoding ile güvenli taşıma
-          encoded_body=$(echo "$body" | base64 -w0)
-          decoded_body=$(echo "$encoded_body" | base64 -d)
+          $pr_body"
           
-          gh issue create --title "$title" --body "$decoded_body" --label "$labels"
-          
-          if [ "$state" = "CLOSED" ]; then
-            issue_number=$(gh issue list --json number,title -q ".[] | select(.title == \"$title\") | .number")
-            if [ -n "$issue_number" ]; then
-              gh issue close $issue_number
-            fi
+          gh issue create \
+            --title "[PR] #$(jq -r '.number' <<< "$pr"): $(jq -r '.title' <<< "$pr")" \
+            --body "$enhanced_body" \
+            --label "$(jq -r '.labels[].name' <<< "$pr" | tr '\n' ',' | sed 's/,$//')" || true
+            
+          if [ "$(jq -r '.state' <<< "$pr")" != "OPEN" ]; then
+            issue_number=$(gh issue list --json number,title -q ".[] | select(.title | contains(\"$(jq -r '.title' <<< "$pr")\")) | .number")
+            gh issue close "$issue_number" || true
           fi
         done
 
