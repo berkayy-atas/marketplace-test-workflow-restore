@@ -250,7 +250,7 @@ runs:
         done
         echo "Issue restoration completed."
 
-     - name: Restore Pull Requests
+    - name: Restore Pull Requests
       shell: bash
       run: |
         echo "Restoring pull requests..."
