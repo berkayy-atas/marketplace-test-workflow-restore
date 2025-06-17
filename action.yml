@@ -176,6 +176,7 @@ runs:
         done
         
         echo "Code repository restored successfully."
+
   
     # --- METADATA RESTORE STEPS ---
     - name: Restore Labels
@@ -250,29 +251,44 @@ runs:
         done
         echo "Issue restoration completed."
 
-    - name: Restore Branches for Pull Requests
+    - name: Prepare Repository for Restoration
       shell: bash
       run: |
-        echo "Ensuring all branches exist for pull requests..."
-        jq -c '.data.repository.refs.nodes[]' repo-metadata/branches.json | while read branch; do
-          branch_name=$(echo "$branch" | jq -r '.name')
-          commit_sha=$(echo "$branch" | jq -r '.target.oid')
-          
-          # Branch'in zaten var olup olmadığını kontrol et
-          if ! git show-ref --verify --quiet refs/heads/"$branch_name"; then
-            echo "Creating branch: $branch_name at $commit_sha"
-            git branch "$branch_name" "$commit_sha"
-            git push origin "$branch_name"
-          else
-            echo "Branch already exists: $branch_name"
+        cd repo-mirror
+        
+        # Tüm branch ve tag'leri al
+        git fetch --all --tags
+        
+        # Lokal branch'leri oluştur
+        git for-each-ref --format="%(refname:lstrip=2)" refs/remotes/origin | 
+        while read branch; do
+          # 'HEAD' branch'ini atla
+          if [ "$branch" != "HEAD" ]; then
+            git branch -f "$branch" "origin/$branch" || echo "Branch $branch already exists"
           fi
         done
-
+    
+    - name: Restore All Branches
+      shell: bash
+      run: |
+        cd repo-mirror
+        
+        # Tüm branch'leri pushla
+        git push --all --force
+        
+        # Tüm tag'leri pushla
+        git push --tags --force
+    
     - name: Restore Pull Requests
       shell: bash
       run: |
+        cd repo-mirror
+        
+        # Lokal branch'leri güncelle
+        git fetch origin '+refs/heads/*:refs/heads/*'
+        
         echo "Restoring pull requests..."
-        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
+        jq -c '.[]' ../repo-metadata/pull_requests.json | while read pr; do
           title=$(jq -r '.title' <<< "$pr")
           body=$(jq -r '.body' <<< "$pr")
           head_ref=$(jq -r '.headRefName' <<< "$pr")
@@ -282,21 +298,40 @@ runs:
           merged=$(jq -r '.merged' <<< "$pr")
           labels=$(jq -r '.labels[].name' <<< "$pr" | tr '\n' ',' | sed 's/,$//')
           
+          # Özel karakterleri temizle
+          clean_title=$(echo "$title" | tr -cd '[:alnum:] _-')
+          
           # PR'ı oluştur
-          echo "Creating PR: $title (from $head_ref to $base_ref)"
-          gh pr create --title "$title" --body "$body" --head "$head_ref" --base "$base_ref" --label "$labels"
+          echo "Creating PR: $clean_title (from $head_ref to $base_ref)"
           
-          # PR durumunu güncelle
-          new_pr_number=$(gh pr list --json number,title -q ".[] | select(.title == \"$title\") | .number")
+          # PR oluşturma komutunu daha güvenli hale getir
+          if ! gh pr create --title "$clean_title" \
+                            --body "$body" \
+                            --head "$head_ref" \
+                            --base "$base_ref" \
+                            --label "$labels"; then
+            echo "PR creation failed, retrying as draft"
+            gh pr create --title "$clean_title" \
+                        --body "$body" \
+                        --head "$head_ref" \
+                        --base "$base_ref" \
+                        --label "$labels" \
+                        --draft
+          fi
           
-          if [ "$state" != "OPEN" ] || [ "$merged" = "true" ]; then
+          # Yeni PR numarasını al
+          new_pr_number=$(gh pr list --json number,title -q ".[] | select(.title == \"$clean_title\") | .number")
+          
+          if [ -n "$new_pr_number" ]; then
             if [ "$merged" = "true" ]; then
               echo "Merging PR #$new_pr_number"
-              gh pr merge "$new_pr_number" --merge
-            else
+              gh pr merge "$new_pr_number" --merge --delete-branch
+            elif [ "$state" = "CLOSED" ]; then
               echo "Closing PR #$new_pr_number"
               gh pr close "$new_pr_number"
             fi
+          else
+            echo "Failed to retrieve PR number for: $clean_title"
           fi
         done
         echo "Pull request restoration completed."
