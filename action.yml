@@ -144,6 +144,11 @@ runs:
         sudo apt-get update -qq
         sudo apt-get install -y gh jq -qq
         
+    - name: Authenticate GitHub CLI
+      shell: bash
+      run: |
+        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
+        
     - name: Push Restored Repository
       shell: bash
       run: |
@@ -172,87 +177,120 @@ runs:
         
         echo "Code repository restored successfully."
   
-
-    - name: Restore Branches and Pull Requests
+    # --- METADATA RESTORE STEPS ---
+    - name: Restore Labels
       shell: bash
       run: |
-        # Tüm branch'leri geri yükle
-        jq -c '.data.repository.refs.nodes[]' repo-metadata/branches.json | while read branch; do
-          branch_name=$(echo "$branch" | jq -r '.name')
-          commit_sha=$(echo "$branch" | jq -r '.target.oid')
-          
-          # Branch'i oluştur ve commit'e işaret et
-          git checkout -b "$branch_name" "$commit_sha"
-          git push origin "$branch_name"
-        done
-
-        # PR'ları orijinal durumlarına getir
-        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
-          pr_state=$(echo "$pr" | jq -r '.state')
-          pr_number=$(echo "$pr" | jq -r '.number')
-          
-          if [ "$pr_state" == "CLOSED" ]; then
-            gh pr close "$pr_number"
-          elif [ "$pr_state" == "MERGED" ]; then
-            # PR'ı merge et (simüle etmek için)
-            gh pr merge "$pr_number" --merge
-          fi
-        done
-      env:
-        GH_TOKEN: ${{ inputs.restore_github_token }}
-
-    - name: Import Repository Metadata
-      shell: bash
-      run: |
-        # Restore labels
+        echo "Restoring labels..."
         jq -c '.data.repository.labels.nodes[]' repo-metadata/labels_milestones.json | while read label; do
           name=$(jq -r '.name' <<< "$label")
-          gh label create "$name" --color "$(jq -r '.color' <<< "$label")" --description "$(jq -r '.description // ""' <<< "$label")" || true
+          color=$(jq -r '.color' <<< "$label")
+          description=$(jq -r '.description // ""' <<< "$label")
+          
+          # Skip if label already exists
+          if gh label list | grep -q -w "$name"; then
+            echo "Skipping existing label: $name"
+            continue
+          fi
+          
+          echo "Creating label: $name"
+          gh label create "$name" --color "$color" --description "$description"
         done
-        
-        # Restore milestones
+        echo "Label restoration completed."
+
+    - name: Restore Milestones
+      shell: bash
+      run: |
+        echo "Restoring milestones..."
         jq -c '.data.repository.milestones.nodes[]' repo-metadata/labels_milestones.json | while read milestone; do
           title=$(jq -r '.title' <<< "$milestone")
-          gh milestone create "$title" \
-            --description "$(jq -r '.description // ""' <<< "$milestone")" \
-            --due-date "$(jq -r '.dueOn // ""' <<< "$milestone")" || true
+          description=$(jq -r '.description // ""' <<< "$milestone")
+          due_date=$(jq -r '.dueOn // ""' <<< "$milestone")
+          
+          # Skip if milestone already exists
+          if gh milestone list | grep -q -w "$title"; then
+            echo "Skipping existing milestone: $title"
+            continue
+          fi
+          
+          echo "Creating milestone: $title"
+          cmd="gh milestone create \"$title\""
+          [ -n "$description" ] && cmd+=" --description \"$description\""
+          [ -n "$due_date" ] && cmd+=" --due-date \"$due_date\""
+          eval "$cmd"
         done
-        
-        # Restore issues
+        echo "Milestone restoration completed."
+
+    - name: Restore Issues
+      shell: bash
+      run: |
+        echo "Restoring issues..."
         jq -c '.[]' repo-metadata/issues.json | while read issue; do
+          title=$(jq -r '.title' <<< "$issue")
           body=$(jq -r '.body' <<< "$issue")
-          gh issue create \
-            --title "$(jq -r '.title' <<< "$issue")" \
-            --body "$body" \
-            --label "$(jq -r '.labels[].name' <<< "$issue" | tr '\n' ',' | sed 's/,$//')" || true
-            
-          if [ "$(jq -r '.state' <<< "$issue")" = "CLOSED" ]; then
-            issue_number=$(gh issue list --json number,title -q ".[] | select(.title == \"$(jq -r '.title' <<< "$issue")\") | .number")
-            gh issue close "$issue_number" || true
+          labels=$(jq -r '.labels[].name' <<< "$issue" | tr '\n' ',' | sed 's/,$//')
+          state=$(jq -r '.state' <<< "$issue")
+          
+          # Skip if issue already exists
+          if gh issue list --json title -q ".[] | select(.title == \"$title\")" | grep -q .; then
+            echo "Skipping existing issue: $title"
+            continue
+          fi
+          
+          echo "Creating issue: $title"
+          gh issue create --title "$title" --body "$body" --label "$labels"
+          
+          if [ "$state" = "CLOSED" ]; then
+            issue_number=$(gh issue list --json number,title -q ".[] | select(.title == \"$title\") | .number")
+            if [ -n "$issue_number" ]; then
+              echo "Closing issue: $title"
+              gh issue close "$issue_number"
+            fi
           fi
         done
-        
-        # Restore PRs as issues
+        echo "Issue restoration completed."
+
+    - name: Restore Pull Requests (as Issues)
+      shell: bash
+      run: |
+        echo "Restoring pull requests as issues..."
         jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
+          pr_title=$(jq -r '.title' <<< "$pr")
+          title="[PR] #$(jq -r '.number' <<< "$pr"): $pr_title"
           head_ref=$(jq -r '.headRefName' <<< "$pr")
           base_ref=$(jq -r '.baseRefName' <<< "$pr")
           pr_body=$(jq -r '.body' <<< "$pr")
-          enhanced_body="## Restored Pull Request
-          **From:** \`$head_ref\`  
-          **To:** \`$base_ref\`  
-          **Original State:** $(jq -r '.state' <<< "$pr")
+          state=$(jq -r '.state' <<< "$pr")
+          labels=$(jq -r '.labels[].name' <<< "$pr" | tr '\n' ',' | sed 's/,$//')
           
+          # Enhanced body with PR metadata
+          enhanced_body="## Restored Pull Request Metadata
+          - **Source Branch:** \`$head_ref\`  
+          - **Target Branch:** \`$base_ref\`  
+          - **Original State:** $state
+          - **Original PR Number:** #$(jq -r '.number' <<< "$pr")
+          - **Created At:** $(jq -r '.createdAt' <<< "$pr")
+          - **Closed At:** $(jq -r '.closedAt // "N/A"' <<< "$pr")
+          - **Merged At:** $(jq -r '.mergedAt // "N/A"' <<< "$pr")
+          
+          ## Original PR Description
           $pr_body"
           
-          gh issue create \
-            --title "[PR] #$(jq -r '.number' <<< "$pr"): $(jq -r '.title' <<< "$pr")" \
-            --body "$enhanced_body" \
-            --label "$(jq -r '.labels[].name' <<< "$pr" | tr '\n' ',' | sed 's/,$//')" || true
-            
-          if [ "$(jq -r '.state' <<< "$pr")" != "OPEN" ]; then
-            issue_number=$(gh issue list --json number,title -q ".[] | select(.title | contains(\"$(jq -r '.title' <<< "$pr")\")) | .number")
-            gh issue close "$issue_number" || true
+          # Skip if PR issue already exists
+          if gh issue list --json title -q ".[] | select(.title == \"$title\")" | grep -q .; then
+            echo "Skipping existing PR issue: $title"
+            continue
+          fi
+          
+          echo "Creating PR issue: $title"
+          gh issue create --title "$title" --body "$enhanced_body" --label "$labels"
+          
+          if [ "$state" != "OPEN" ]; then
+            issue_number=$(gh issue list --json number,title -q ".[] | select(.title == \"$title\") | .number")
+            if [ -n "$issue_number" ]; then
+              echo "Closing PR issue: $title"
+              gh issue close "$issue_number"
+            fi
           fi
         done
-
-    
+        echo "PR restoration as issues completed."
