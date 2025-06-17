@@ -25,7 +25,7 @@ jobs:
     permissions: write-all
     steps:
       - name: Restore Repository
-        uses: berkayy-atas/marketplace-test-workflow-restore@latest
+        uses: berkayy-atas/marketplace-test-workflow-restore@v1.0.14
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
@@ -70,7 +70,7 @@ jobs:
     permissions: write-all
     steps:
       - name: Restore Repository
-        uses: berkayy-atas/marketplace-test-workflow-restore@latest
+        uses: berkayy-atas/marketplace-test-workflow-restore@v1.0.14
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
