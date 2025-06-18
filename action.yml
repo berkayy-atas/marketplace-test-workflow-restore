@@ -148,11 +148,17 @@ runs:
       run: |
         echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
         
-     # ✅ Recreate branches with correct SHAs
+    # ✅ Prepare working repo from mirror
+    - name: Prepare Working Copy
+      shell: bash
+      run: |
+        git clone repo-mirror repo-working
+
+    # ✅ Recreate branches with correct SHAs in working copy
     - name: Restore Branches with Correct SHAs
       shell: bash
       run: |
-        cd repo-mirror
+        cd repo-working
         echo "Rebuilding branches from backup metadata..."
         jq -c '.nodes[]' ../repo-metadata/branches.json | while read branch; do
           name=$(jq -r '.name' <<< "$branch")
@@ -160,8 +166,9 @@ runs:
           git branch -f "$name" "$sha"
         done
 
+        echo "Pushing branches..."
         for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
-          echo "Pushing $branch"
+          echo "Pushing $branch..."
           git push origin "$branch" --force
         done
 
@@ -169,7 +176,8 @@ runs:
     - name: Restore Pull Requests
       shell: bash
       run: |
-        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
+        cd repo-working
+        jq -c '.[]' ../repo-metadata/pull_requests.json | while read pr; do
           title=$(jq -r '.title' <<< "$pr")
           body=$(jq -r '.body' <<< "$pr")
           head=$(jq -r '.headRefName' <<< "$pr")
