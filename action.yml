@@ -211,8 +211,26 @@ runs:
         done
     
         echo "✅ Pull request restore step completed."
-
-  
+    
+    - name: Restore PR Comments
+      shell: bash
+      run: |
+        cd repo-working
+        echo "Restoring PR comments..."
+        for pr_number in $(jq -r '.[].number' ../repo-metadata/pull_requests.json); do
+          comment_file="../repo-metadata/pr_comments_$pr_number.json"
+          if [ -f "$comment_file" ]; then
+            jq -c '.comments[]' "$comment_file" | while read comment; do
+              body=$(jq -r '.body' <<< "$comment")
+              echo "Adding comment to PR #$pr_number"
+              gh pr comment "$pr_number" --body "$body"
+            done
+          else
+            echo "No comments file for PR #$pr_number, skipping."
+          fi
+        done
+        echo "✅ PR comments restored."
+      
     # --- METADATA RESTORE STEPS ---
     - name: Restore Labels
       shell: bash
