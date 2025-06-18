@@ -177,17 +177,41 @@ runs:
     - name: Restore Pull Requests
       shell: bash
       run: |
-        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
         cd repo-working
+    
+        echo "Restoring Pull Requests with merge & closed check..."
+    
         jq -c '.[]' ../repo-metadata/pull_requests.json | while read pr; do
           title=$(jq -r '.title' <<< "$pr")
           body=$(jq -r '.body' <<< "$pr")
           head=$(jq -r '.headRefName' <<< "$pr")
           base=$(jq -r '.baseRefName' <<< "$pr")
-          echo "Creating PR: $title"
+          merged=$(jq -r '.merged' <<< "$pr")
+          state=$(jq -r '.state' <<< "$pr")
+    
+          echo "👉 Checking PR: $title (head: $head → base: $base, state: $state, merged: $merged)"
+    
+          # 1️⃣ Eğer bu PR önceden merged veya closed ise PR yaratma!
+          if [ "$merged" = "true" ] || [ "$state" = "CLOSED" ]; then
+            echo "⚠️  Skipping PR creation: already $state or merged."
+            continue
+          fi
+    
+          # 2️⃣ Ayrıca: head ve base arasında hiç commit yoksa PR yaratma!
+          if git rev-list --count "$base..$head" | grep -q '^0$'; then
+            echo "⚠️  Skipping PR creation: no commits between $base and $head."
+            continue
+          fi
+    
+          # 3️⃣ PR create safe
+          echo "✅ Creating PR: $title"
           gh pr create --title "$title" --body "$body" --head "$head" --base "$base" || \
           gh pr create --title "$title" --body "$body" --head "$head" --base "$base" --draft
+    
         done
+    
+        echo "✅ Pull request restore step completed."
+
   
     # --- METADATA RESTORE STEPS ---
     - name: Restore Labels
