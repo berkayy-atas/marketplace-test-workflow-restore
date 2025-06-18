@@ -148,132 +148,36 @@ runs:
       run: |
         echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
         
-    - name: Push Restored Repository
+     # ✅ Recreate branches with correct SHAs
+    - name: Restore Branches with Correct SHAs
       shell: bash
       run: |
         cd repo-mirror
-        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
-        
-        # Branch korumaları geçici kaldır
-        protected_branches=$(gh api -X GET "/repos/${{ github.repository }}/branches?protected=true" -q '.[].name' 2>/dev/null || echo "")
-        for branch in $protected_branches; do
-          gh api -X DELETE "/repos/${{ github.repository }}/branches/$branch/protection" || echo "Branch protection not found for $branch"
+        echo "Rebuilding branches from backup metadata..."
+        jq -c '.nodes[]' ../repo-metadata/branches.json | while read branch; do
+          name=$(jq -r '.name' <<< "$branch")
+          sha=$(jq -r '.target.oid' <<< "$branch")
+          git branch -f "$name" "$sha"
         done
-        
-        # Tüm branch ve tag'leri pushla
-        git push --all --force
-        git push --tags --force
-        
-        # Branch korumaları geri yükle
-        for branch in $protected_branches; do
-          echo "Re-enabling protection for $branch"
-          gh api -X PUT "/repos/${{ github.repository }}/branches/$branch/protection" \
-            -f '{
-              "required_status_checks": null,
-              "enforce_admins": true,
-              "required_pull_request_reviews": null,
-              "restrictions": null
-            }' || echo "Failed to re-enable protection for $branch"
-        done
-        
-        echo "Code repository restored successfully."
 
-    - name: Restore Branches for PRs
-      shell: bash
-      run: |
-        cd repo-mirror
-        
-        # Tüm branch'leri lokale çek
-        git fetch origin '+refs/heads/*:refs/heads/*'
-        
-        # PR'lar için gerekli branch'leri oluştur
-        echo "Preparing branches for PR restoration..."
-        jq -c '.[]' ../repo-metadata/pull_requests.json | while read pr; do
-          head_ref=$(jq -r '.headRefName' <<< "$pr")
-          base_ref=$(jq -r '.baseRefName' <<< "$pr")
-          
-          # Head branch yoksa oluştur
-          if ! git show-ref --verify --quiet refs/heads/"$head_ref"; then
-            commit_sha=$(git rev-parse origin/"$head_ref" 2>/dev/null)
-            if [ -n "$commit_sha" ]; then
-              echo "Creating local branch: $head_ref at $commit_sha"
-              git branch "$head_ref" "$commit_sha"
-            else
-              echo "WARNING: Commit not found for branch $head_ref"
-            fi
-          fi
-          
-          # Base branch yoksa oluştur
-          if ! git show-ref --verify --quiet refs/heads/"$base_ref"; then
-            commit_sha=$(git rev-parse origin/"$base_ref" 2>/dev/null)
-            if [ -n "$commit_sha" ]; then
-              echo "Creating local branch: $base_ref at $commit_sha"
-              git branch "$base_ref" "$commit_sha"
-            fi
-          fi
+        for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
+          echo "Pushing $branch"
+          git push origin "$branch" --force
         done
-        
-        # Oluşturulan branch'leri pushla
-        git push --all --force
 
+    # ✅ Restore Pull Requests
     - name: Restore Pull Requests
       shell: bash
       run: |
-        cd repo-mirror
-        echo "Restoring pull requests..."
-        
-        jq -c '.[]' ../repo-metadata/pull_requests.json | while read pr; do
+        jq -c '.[]' repo-metadata/pull_requests.json | while read pr; do
           title=$(jq -r '.title' <<< "$pr")
           body=$(jq -r '.body' <<< "$pr")
-          head_ref=$(jq -r '.headRefName' <<< "$pr")
-          base_ref=$(jq -r '.baseRefName' <<< "$pr")
-          pr_number=$(jq -r '.number' <<< "$pr")
-          state=$(jq -r '.state' <<< "$pr")
-          merged=$(jq -r '.merged' <<< "$pr")
-          labels=$(jq -r '.labels[].name' <<< "$pr" | tr '\n' ',' | sed 's/,$//')
-          
-          # PR oluşturmadan önce branch'lerin var olduğundan emin ol
-          if ! git show-ref --verify --quiet refs/heads/"$head_ref"; then
-            echo "ERROR: Head branch $head_ref does not exist for PR #$pr_number"
-            continue
-          fi
-          
-          if ! git show-ref --verify --quiet refs/heads/"$base_ref"; then
-            echo "ERROR: Base branch $base_ref does not exist for PR #$pr_number"
-            continue
-          fi
-          
-          # PR oluştur
-          echo "Creating PR: $title (from $head_ref to $base_ref)"
-          if ! gh pr create --title "$title" \
-                            --body "$body" \
-                            --head "$head_ref" \
-                            --base "$base_ref" \
-                            --label "$labels"; then
-            echo "Trying to create as draft PR..."
-            gh pr create --title "$title" \
-                         --body "$body" \
-                         --head "$head_ref" \
-                         --base "$base_ref" \
-                         --label "$labels" \
-                         --draft
-          fi
-          
-          # Yeni PR numarasını al
-          new_pr_number=$(gh pr list --json number,title -q ".[] | select(.title == \"$title\") | .number")
-          
-          if [ -n "$new_pr_number" ]; then
-            if [ "$merged" = "true" ]; then
-              echo "Merging PR #$new_pr_number"
-              gh pr merge "$new_pr_number" --merge --delete-branch
-            elif [ "$state" = "CLOSED" ]; then
-              echo "Closing PR #$new_pr_number"
-              gh pr close "$new_pr_number"
-            fi
-          fi
+          head=$(jq -r '.headRefName' <<< "$pr")
+          base=$(jq -r '.baseRefName' <<< "$pr")
+          echo "Creating PR: $title"
+          gh pr create --title "$title" --body "$body" --head "$head" --base "$base" || \
+          gh pr create --title "$title" --body "$body" --head "$head" --base "$base" --draft
         done
-        echo "Pull request restoration completed."
-
   
     # --- METADATA RESTORE STEPS ---
     - name: Restore Labels
