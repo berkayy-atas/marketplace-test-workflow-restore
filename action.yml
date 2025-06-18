@@ -147,9 +147,11 @@ runs:
     - name: Prepare Working Copy
       shell: bash
       run: |
-        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
         git clone repo-mirror repo-working
         cd repo-working
+        # Change origin remote to real GitHub repo!
+        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
+        # Detach HEAD for safe force branch update
         git checkout --detach
 
     # ✅ Recreate branches with correct SHAs in working copy
