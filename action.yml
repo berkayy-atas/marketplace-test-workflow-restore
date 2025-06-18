@@ -178,9 +178,9 @@ runs:
       shell: bash
       run: |
         cd repo-working
-    
+
         echo "Restoring Pull Requests with merge & closed check..."
-    
+
         jq -c '.[]' ../repo-metadata/pull_requests.json | while read pr; do
           title=$(jq -r '.title' <<< "$pr")
           body=$(jq -r '.body' <<< "$pr")
@@ -188,48 +188,55 @@ runs:
           base=$(jq -r '.baseRefName' <<< "$pr")
           merged=$(jq -r '.merged' <<< "$pr")
           state=$(jq -r '.state' <<< "$pr")
-    
+
           echo "👉 Checking PR: $title (head: $head → base: $base, state: $state, merged: $merged)"
-    
+
           # 1️⃣ Eğer bu PR önceden merged veya closed ise PR yaratma!
           if [ "$merged" = "true" ] || [ "$state" = "CLOSED" ]; then
             echo "⚠️  Skipping PR creation: already $state or merged."
             continue
           fi
-    
+
           # 2️⃣ Ayrıca: head ve base arasında hiç commit yoksa PR yaratma!
           if git rev-list --count "$base..$head" | grep -q '^0$'; then
             echo "⚠️  Skipping PR creation: no commits between $base and $head."
             continue
           fi
-    
+          
           # 3️⃣ PR create safe
           echo "✅ Creating PR: $title"
           gh pr create --title "$title" --body "$body" --head "$head" --base "$base" || \
           gh pr create --title "$title" --body "$body" --head "$head" --base "$base" --draft
-    
+
         done
-    
+
         echo "✅ Pull request restore step completed."
     
-    - name: Restore PR Comments
+    - name: Restore PR Comments (with original authors)
       shell: bash
       run: |
         cd repo-working
-        echo "Restoring PR comments..."
+        echo "Restoring ALL PR comments with original author info..."
+
         for pr_number in $(jq -r '.[].number' ../repo-metadata/pull_requests.json); do
-          comment_file="../repo-metadata/pr_comments_$pr_number.json"
-          if [ -f "$comment_file" ]; then
-            jq -c '.comments[]' "$comment_file" | while read comment; do
-              body=$(jq -r '.body' <<< "$comment")
-              echo "Adding comment to PR #$pr_number"
-              gh pr comment "$pr_number" --body "$body"
-            done
-          else
-            echo "No comments file for PR #$pr_number, skipping."
-          fi
+          for type in issue review; do
+            comment_file="../repo-metadata/pr_${type}_comments_$pr_number.json"
+            if [ -f "$comment_file" ]; then
+              jq -c '.[]' "$comment_file" | while read comment; do
+                body=$(jq -r '.body' <<< "$comment")
+                user=$(jq -r '.user.login' <<< "$comment")
+                created=$(jq -r '.created_at' <<< "$comment")
+                final_body="**[original by @$user at $created]**\n\n$body"
+                echo "Adding $type comment to PR #$pr_number from @$user"
+                gh pr comment "$pr_number" --body "$final_body"
+              done
+            else
+              echo "No $type comments file for PR #$pr_number, skipping."
+            fi
+          done
         done
-        echo "✅ PR comments restored."
+
+        echo "✅ All PR comments restored with author inline."
       
     # --- METADATA RESTORE STEPS ---
     - name: Restore Labels
