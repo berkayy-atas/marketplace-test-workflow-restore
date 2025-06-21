@@ -164,45 +164,45 @@ runs:
 
     # ✅ Recreate branches with correct SHAs in working copy
     - name: Restore Branches with Correct SHAs
-    shell: bash
-    run: |
-      echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
-      cd repo-working
+      shell: bash
+      run: |
+        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
+        cd repo-working
 
-      echo "Rebuilding branches from backup metadata..."
-      jq -c '.nodes[]' ../repo-metadata/branches.json | while read branch; do
-        name=$(jq -r '.name' <<< "$branch")
-        sha=$(jq -r '.target.oid' <<< "$branch")
-        git branch -f "$name" "$sha"
-      done
+        echo "Rebuilding branches from backup metadata..."
+        jq -c '.nodes[]' ../repo-metadata/branches.json | while read branch; do
+          name=$(jq -r '.name' <<< "$branch")
+          sha=$(jq -r '.target.oid' <<< "$branch")
+          git branch -f "$name" "$sha"
+        done
 
-      echo "Pushing branches safely..."
+        echo "Pushing branches safely..."
 
-      # 1️⃣ HEAD branch'ı otomatik belirle (main veya master)
-      HEAD_BRANCH=""
-      if git show-ref --verify --quiet refs/heads/main; then
-        HEAD_BRANCH="main"
-      elif git show-ref --verify --quiet refs/heads/master; then
-        HEAD_BRANCH="master"
-      else
-        echo "⚠️ Could not detect HEAD branch automatically. Using 'main' as fallback."
-        HEAD_BRANCH="main"
-      fi
-
-      # 2️⃣ Diğer branch'ları push et
-      for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
-        if [ "$branch" == "$HEAD_BRANCH" ]; then
-          continue
+        # 1️⃣ HEAD branch'ı otomatik belirle (main veya master)
+        HEAD_BRANCH=""
+        if git show-ref --verify --quiet refs/heads/main; then
+          HEAD_BRANCH="main"
+        elif git show-ref --verify --quiet refs/heads/master; then
+          HEAD_BRANCH="master"
+        else
+          echo "⚠️ Could not detect HEAD branch automatically. Using 'main' as fallback."
+          HEAD_BRANCH="main"
         fi
-        echo "🔄 Pushing branch: $branch"
-        git push origin "$branch" --force
-      done
-      
-      # 3️⃣ HEAD branch'ı en son push et
-      echo "✅ Pushing HEAD branch ($HEAD_BRANCH)..."
-      git push origin "$HEAD_BRANCH" --force
 
-      echo "✅ All branches pushed safely."
+        # 2️⃣ Diğer branch'ları push et
+        for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
+          if [ "$branch" == "$HEAD_BRANCH" ]; then
+            continue
+          fi
+          echo "🔄 Pushing branch: $branch"
+          git push origin "$branch" --force
+        done
+
+        # 3️⃣ HEAD branch'ı en son push et
+        echo "✅ Pushing HEAD branch ($HEAD_BRANCH)..."
+        git push origin "$HEAD_BRANCH" --force
+        
+        echo "✅ All branches pushed safely."
 
 
     # ✅ Restore Pull Requests
