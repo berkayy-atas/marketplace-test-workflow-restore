@@ -62,22 +62,22 @@ runs:
             "OtpGenerationMode": "Number",
             "Type": "MAIL"
           }')
-    
+
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
         JSON_BODY=$(echo "$RESPONSE" | head -n -1)
-    
+
         echo "--- RAW API RESPONSE ---"
         echo "$RESPONSE"
         echo "-------------------------"
         echo "HTTP STATUS: $HTTP_STATUS"
         echo "JSON BODY: $JSON_BODY"
-    
+
         if [ "$HTTP_STATUS" -ne 200 ]; then
           echo "OTP request failed. Status: $HTTP_STATUS"
           echo "Message: $(echo "$JSON_BODY" | jq -r '.message // .error // .msg // .description // "No error message provided"')"
           exit 1
         fi
-    
+
         UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
         echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
 
@@ -154,6 +154,14 @@ runs:
         # Detach HEAD for safe force branch update
         git checkout --detach
 
+    - name: Load info.json flags
+      shell: bash
+      run: |
+        INFO_FILE="repo-metadata/info.json"
+        echo "RESTORE_ISSUES=$(jq -r '.issues' $INFO_FILE)" >> $GITHUB_ENV
+        echo "RESTORE_PRS=$(jq -r '.pull_requests' $INFO_FILE)" >> $GITHUB_ENV
+        echo "RESTORE_LABELS_MILESTONES=$(jq -r '.labels_milestones' $INFO_FILE)" >> $GITHUB_ENV
+
     # ✅ Recreate branches with correct SHAs in working copy
     - name: Restore Branches with Correct SHAs
       shell: bash
@@ -175,6 +183,7 @@ runs:
 
     # ✅ Restore Pull Requests
     - name: Restore Pull Requests
+      if: env.RESTORE_PRS == 'true'
       shell: bash
       run: |
         cd repo-working
@@ -213,6 +222,7 @@ runs:
         echo "✅ Pull request restore step completed."
     
     - name: Restore PR Comments (with original authors)
+      if: env.RESTORE_PRS == 'true'
       shell: bash
       run: |
         cd repo-working
@@ -240,6 +250,7 @@ runs:
       
     # --- METADATA RESTORE STEPS ---
     - name: Restore Labels
+      if: env.RESTORE_LABELS_MILESTONES == 'true'
       shell: bash
       run: |
         echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
@@ -261,6 +272,7 @@ runs:
         echo "Label restoration completed."
 
     - name: Restore Milestones
+      if: env.RESTORE_LABELS_MILESTONES == 'true'
       shell: bash
       run: |
         echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
@@ -285,6 +297,7 @@ runs:
         echo "Milestone restoration completed."
 
     - name: Restore Issues
+      if: env.RESTORE_ISSUES == 'true'
       shell: bash
       run: |
         echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
