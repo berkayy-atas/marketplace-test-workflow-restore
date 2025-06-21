@@ -154,20 +154,13 @@ runs:
         # Detach HEAD for safe force branch update
         git checkout --detach
 
-    - name: Load info.json flags
-      shell: bash
-      run: |
-        INFO_FILE="repo-metadata/info.json"
-        echo "RESTORE_ISSUES=$(jq -r '.issues' $INFO_FILE)" >> $GITHUB_ENV
-        echo "RESTORE_PRS=$(jq -r '.pull_requests' $INFO_FILE)" >> $GITHUB_ENV
-        echo "RESTORE_LABELS_MILESTONES=$(jq -r '.labels_milestones' $INFO_FILE)" >> $GITHUB_ENV
-
     # ✅ Recreate branches with correct SHAs in working copy
     - name: Restore Branches with Correct SHAs
       shell: bash
       run: |
         echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
         cd repo-working
+
         echo "Rebuilding branches from backup metadata..."
         jq -c '.nodes[]' ../repo-metadata/branches.json | while read branch; do
           name=$(jq -r '.name' <<< "$branch")
@@ -176,25 +169,37 @@ runs:
         done
 
         echo "Detecting HEAD branch..."
-        HEAD_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "main")
+        if git symbolic-ref --short HEAD >/dev/null 2>&1; then
+          HEAD_BRANCH=$(git symbolic-ref --short HEAD)
+        else
+          HEAD_BRANCH=""
+        fi
 
-        echo "Detected HEAD branch: $HEAD_BRANCH"
+        echo "Detected HEAD_BRANCH: $HEAD_BRANCH"
 
-        echo "Pushing other branches first..."
+        echo "Pushing non-HEAD branches..."
         for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
           if [ "$branch" = "$HEAD_BRANCH" ]; then
-            echo "Skipping HEAD branch ($HEAD_BRANCH) for now..."
             continue
           fi
           echo "Pushing $branch..."
-          git push origin "$branch" --force
+          git push origin "$branch" --force || echo "⚠️ Failed to push $branch"
         done
+        
+        if [ -n "$HEAD_BRANCH" ]; then
+          echo "Pushing HEAD branch ($HEAD_BRANCH)..."
+          git push origin "$HEAD_BRANCH" --force || echo "⚠️ Failed to push HEAD branch"
+        else
+          echo "⚠️ HEAD branch not found. Skipping HEAD push."
+        fi
 
-        echo "Pushing HEAD branch ($HEAD_BRANCH)..."
-        git push origin "$HEAD_BRANCH" --force
-
-        echo "✅ All branches pushed safely!"
-
+    - name: Load info.json flags
+      shell: bash
+      run: |
+        INFO_FILE="repo-metadata/info.json"
+        echo "RESTORE_ISSUES=$(jq -r '.issues' $INFO_FILE)" >> $GITHUB_ENV
+        echo "RESTORE_PRS=$(jq -r '.pull_requests' $INFO_FILE)" >> $GITHUB_ENV
+        echo "RESTORE_LABELS_MILESTONES=$(jq -r '.labels_milestones' $INFO_FILE)" >> $GITHUB_ENV
 
     # ✅ Restore Pull Requests
     - name: Restore Pull Requests
