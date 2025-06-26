@@ -130,7 +130,7 @@ runs:
         cd repo-mirror
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
-        git config url."https://x-access-token:${{ secrets.GITHUB_TOKEN n }}@github.com/".insteadOf https://github.com/
+        git config url."https://x-access-token:${{ github.token }}@github.com/".insteadOf https://github.com/
 
     - name: Install GitHub CLI
       shell: bash
@@ -147,7 +147,7 @@ runs:
         git clone repo-mirror repo-working
         cd repo-working
         # Change origin remote to real GitHub repo!
-        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN  }}@github.com/${{ github.repository }}.git
+        git remote set-url origin https://x-access-token:${{ github.token  }}@github.com/${{ github.repository }}.git
         # Detach HEAD for safe force branch update
         git checkout --detach
 
