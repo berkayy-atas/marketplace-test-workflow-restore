@@ -9,9 +9,6 @@ inputs:
   encryption_key:
     description: 'Secret key for decrypting the backup'
     required: true
-  restore_github_token:
-    description: 'Token for repository mirror'
-    required: true
   record_id:
     description: 'Enter RECORD_ID to retrieve a specific backup file.'
     required: false
@@ -133,7 +130,7 @@ runs:
         cd repo-mirror
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
-        git config url."https://x-access-token:${{ inputs.restore_github_token }}@github.com/".insteadOf https://github.com/
+        git config url."https://x-access-token:${{ secrets.GITHUB_TOKEN n }}@github.com/".insteadOf https://github.com/
 
     - name: Install GitHub CLI
       shell: bash
@@ -150,7 +147,7 @@ runs:
         git clone repo-mirror repo-working
         cd repo-working
         # Change origin remote to real GitHub repo!
-        git remote set-url origin https://x-access-token:${{ inputs.restore_github_token }}@github.com/${{ github.repository }}.git
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN  }}@github.com/${{ github.repository }}.git
         # Detach HEAD for safe force branch update
         git checkout --detach
 
@@ -158,7 +155,7 @@ runs:
     - name: Restore Branches with Correct SHAs
       shell: bash
       run: |
-        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
+        gh auth setup-git
         cd repo-working
 
         echo "Rebuilding branches from backup metadata..."
@@ -273,7 +270,7 @@ runs:
       if: env.RESTORE_LABELS_MILESTONES == 'true'
       shell: bash
       run: |
-        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
+        gh auth setup-git
         echo "Restoring labels..."
         jq -c '.data.repository.labels.nodes[]' repo-metadata/labels_milestones.json | while read label; do
           name=$(jq -r '.name' <<< "$label")
@@ -295,7 +292,7 @@ runs:
       if: env.RESTORE_LABELS_MILESTONES == 'true'
       shell: bash
       run: |
-        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
+        gh auth setup-git
         echo "Restoring milestones..."
         jq -c '.data.repository.milestones.nodes[]' repo-metadata/labels_milestones.json | while read milestone; do
           title=$(jq -r '.title' <<< "$milestone")
@@ -320,7 +317,7 @@ runs:
       if: env.RESTORE_ISSUES == 'true'
       shell: bash
       run: |
-        echo "${{ inputs.restore_github_token }}" | gh auth login --with-token
+        gh auth setup-git
         echo "Restoring issues..."
         jq -c '.[]' repo-metadata/issues.json | while read issue; do
           title=$(jq -r '.title' <<< "$issue")
