@@ -155,7 +155,7 @@ runs:
     - name: Restore Branches with Correct SHAs
       shell: bash
       run: |
-        gh auth setup-git
+        echo "${{ github.token }}" | gh auth login --with-token
         cd repo-working
 
         echo "Rebuilding branches from backup metadata..."
@@ -270,7 +270,7 @@ runs:
       if: env.RESTORE_LABELS_MILESTONES == 'true'
       shell: bash
       run: |
-        gh auth setup-git
+        echo "${{ github.token }}" | gh auth login --with-token
         echo "Restoring labels..."
         jq -c '.data.repository.labels.nodes[]' repo-metadata/labels_milestones.json | while read label; do
           name=$(jq -r '.name' <<< "$label")
@@ -292,7 +292,7 @@ runs:
       if: env.RESTORE_LABELS_MILESTONES == 'true'
       shell: bash
       run: |
-        gh auth setup-git
+        echo "${{ github.token }}" | gh auth login --with-token
         echo "Restoring milestones..."
         jq -c '.data.repository.milestones.nodes[]' repo-metadata/labels_milestones.json | while read milestone; do
           title=$(jq -r '.title' <<< "$milestone")
@@ -317,7 +317,7 @@ runs:
       if: env.RESTORE_ISSUES == 'true'
       shell: bash
       run: |
-        gh auth setup-git
+        echo "${{ github.token }}" | gh auth login --with-token
         echo "Restoring issues..."
         jq -c '.[]' repo-metadata/issues.json | while read issue; do
           title=$(jq -r '.title' <<< "$issue")
