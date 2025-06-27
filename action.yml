@@ -134,13 +134,17 @@ runs:
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
 
-    - name: Configure Git and Push Mirror
+    - name: Git Configuration
       shell: bash
       run: |
-        cd repo-mirror
-        git config user.name "file-security bot"
-        git config user.email "noreply@github.com"
-        # Use the built-in GITHUB_TOKEN for authentication
+        cd repo-backup
+        git config user.name "myapp File Security"
+        git config user.email "file-security@myapp.com"
+        git config url."https://x-access-token:${{ github.token }}@github.com/".insteadOf https://github.com/
+
+    - name: Push Restored Repository
+      shell: bash
+      run: |
+        cd repo-backup
         git remote set-url origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
-        # Push all refs and tags back to GitHub
         git push --mirror
