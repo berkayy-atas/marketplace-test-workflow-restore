@@ -9,6 +9,9 @@ inputs:
   encryption_key:
     description: 'Secret key for decrypting the backup'
     required: true
+  restore_github_token:
+    description: 'Token for repository mirror'
+    required: true
   record_id:
     description: 'Enter RECORD_ID to retrieve a specific backup file.'
     required: false
@@ -17,6 +20,16 @@ inputs:
 runs:
   using: 'composite'
   steps:
+
+    - name: Validate encryption key length
+      shell: bash
+      run: |
+        ENC_KEY="${{ inputs.encryption_key }}"
+        if [ "${#ENC_KEY}" -lt 32 ]; then
+          echo "::error ::The encryption_key must be at least 32 characters long (got ${#ENC_KEY})."
+          exit 1
+        fi
+        
     - name: Checkout Repository
       uses: actions/checkout@v4
       with:
@@ -119,228 +132,26 @@ runs:
         openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_key }}
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
-        mkdir repo-mirror repo-metadata
-        tar -xf repo.tar -C .
+        mkdir repo-mirror
+        tar -xf repo.tar -C repo-mirror
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
 
-    - name: Git Configuration
+     - name: Configure Git with Repository Token
       shell: bash
       run: |
         cd repo-mirror
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
-        git config url."https://x-access-token:${{ github.token }}@github.com/".insteadOf https://github.com/
+        git remote remove origin
+        git remote add origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
 
-    - name: Install GitHub CLI
+    - name: Push Mirror to GitHub
       shell: bash
       run: |
-        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
-        sudo apt-get update -qq
-        sudo apt-get install -y gh jq -qq
+        cd repo-mirror
+        git push --mirror origin
+
         
-    # ✅ Prepare working repo from mirror
-    - name: Prepare Working Copy
-      shell: bash
-      run: |
-        git clone repo-mirror repo-working
-        cd repo-working
-        # Change origin remote to real GitHub repo!
-        git remote set-url origin https://x-access-token:${{ github.token  }}@github.com/${{ github.repository }}.git
-        # Detach HEAD for safe force branch update
-        git checkout --detach
 
-    # ✅ Recreate branches with correct SHAs in working copy
-    - name: Restore Branches with Correct SHAs
-      shell: bash
-      run: |
-        echo "${{ github.token }}" | gh auth login --with-token
-        cd repo-working
-
-        echo "Rebuilding branches from backup metadata..."
-        jq -c '.nodes[]' ../repo-metadata/branches.json | while read branch; do
-          name=$(jq -r '.name' <<< "$branch")
-          sha=$(jq -r '.target.oid' <<< "$branch")
-          git branch -f "$name" "$sha"
-        done
-
-        echo "Detecting HEAD branch..."
-        if git symbolic-ref --short HEAD >/dev/null 2>&1; then
-          HEAD_BRANCH=$(git symbolic-ref --short HEAD)
-        else
-          HEAD_BRANCH=""
-        fi
-
-        echo "Detected HEAD_BRANCH: $HEAD_BRANCH"
-
-        echo "Pushing non-HEAD branches..."
-        for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
-          if [ "$branch" = "$HEAD_BRANCH" ]; then
-            continue
-          fi
-          echo "Pushing $branch..."
-          git push origin "$branch" --force || echo "⚠️ Failed to push $branch"
-        done
-        
-        if [ -n "$HEAD_BRANCH" ]; then
-          echo "Pushing HEAD branch ($HEAD_BRANCH)..."
-          git push origin "$HEAD_BRANCH" --force || echo "⚠️ Failed to push HEAD branch"
-        else
-          echo "⚠️ HEAD branch not found. Skipping HEAD push."
-        fi
-
-    - name: Load info.json flags
-      shell: bash
-      run: |
-        INFO_FILE="repo-metadata/info.json"
-        echo "RESTORE_ISSUES=$(jq -r '.issues' $INFO_FILE)" >> $GITHUB_ENV
-        echo "RESTORE_PRS=$(jq -r '.pull_requests' $INFO_FILE)" >> $GITHUB_ENV
-        echo "RESTORE_LABELS_MILESTONES=$(jq -r '.labels_milestones' $INFO_FILE)" >> $GITHUB_ENV
-
-    # ✅ Restore Pull Requests
-    - name: Restore Pull Requests
-      if: env.RESTORE_PRS == 'true'
-      shell: bash
-      run: |
-        cd repo-working
-
-        echo "Restoring Pull Requests with merge & closed check..."
-
-        jq -c '.[]' ../repo-metadata/pull_requests.json | while read pr; do
-          title=$(jq -r '.title' <<< "$pr")
-          body=$(jq -r '.body' <<< "$pr")
-          head=$(jq -r '.headRefName' <<< "$pr")
-          base=$(jq -r '.baseRefName' <<< "$pr")
-          merged=$(jq -r '.merged' <<< "$pr")
-          state=$(jq -r '.state' <<< "$pr")
-
-          echo "👉 Checking PR: $title (head: $head → base: $base, state: $state, merged: $merged)"
-
-          # 1️⃣ Eğer bu PR önceden merged veya closed ise PR yaratma!
-          if [ "$merged" = "true" ] || [ "$state" = "CLOSED" ]; then
-            echo "⚠️  Skipping PR creation: already $state or merged."
-            continue
-          fi
-
-          # 2️⃣ Ayrıca: head ve base arasında hiç commit yoksa PR yaratma!
-          if git rev-list --count "$base..$head" | grep -q '^0$'; then
-            echo "⚠️  Skipping PR creation: no commits between $base and $head."
-            continue
-          fi
-          
-          # 3️⃣ PR create safe
-          echo "✅ Creating PR: $title"
-          gh pr create --title "$title" --body "$body" --head "$head" --base "$base" || \
-          gh pr create --title "$title" --body "$body" --head "$head" --base "$base" --draft
-
-        done
-
-        echo "✅ Pull request restore step completed."
-    
-    - name: Restore PR Comments (with original authors)
-      if: env.RESTORE_PRS == 'true'
-      shell: bash
-      run: |
-        cd repo-working
-        echo "Restoring ALL PR comments with original author info..."
-
-        for pr_number in $(jq -r '.[].number' ../repo-metadata/pull_requests.json); do
-          for type in issue review; do
-            comment_file="../repo-metadata/pr_${type}_comments_$pr_number.json"
-            if [ -f "$comment_file" ]; then
-              jq -c '.[]' "$comment_file" | while read comment; do
-                body=$(jq -r '.body' <<< "$comment")
-                user=$(jq -r '.user.login' <<< "$comment")
-                created=$(jq -r '.created_at' <<< "$comment")
-                final_body="**[original by @$user at $created]**\n\n$body"
-                echo "Adding $type comment to PR #$pr_number from @$user"
-                gh pr comment "$pr_number" --body "$final_body"
-              done
-            else
-              echo "No $type comments file for PR #$pr_number, skipping."
-            fi
-          done
-        done
-
-        echo "✅ All PR comments restored with author inline."
-      
-    # --- METADATA RESTORE STEPS ---
-    - name: Restore Labels
-      if: env.RESTORE_LABELS_MILESTONES == 'true'
-      shell: bash
-      run: |
-        echo "${{ github.token }}" | gh auth login --with-token
-        echo "Restoring labels..."
-        jq -c '.data.repository.labels.nodes[]' repo-metadata/labels_milestones.json | while read label; do
-          name=$(jq -r '.name' <<< "$label")
-          color=$(jq -r '.color' <<< "$label")
-          description=$(jq -r '.description // ""' <<< "$label")
-          
-          # Skip if label already exists
-          if gh label list | grep -q -w "$name"; then
-            echo "Skipping existing label: $name"
-            continue
-          fi
-          
-          echo "Creating label: $name"
-          gh label create "$name" --color "$color" --description "$description"
-        done
-        echo "Label restoration completed."
-
-    - name: Restore Milestones
-      if: env.RESTORE_LABELS_MILESTONES == 'true'
-      shell: bash
-      run: |
-        echo "${{ github.token }}" | gh auth login --with-token
-        echo "Restoring milestones..."
-        jq -c '.data.repository.milestones.nodes[]' repo-metadata/labels_milestones.json | while read milestone; do
-          title=$(jq -r '.title' <<< "$milestone")
-          description=$(jq -r '.description // ""' <<< "$milestone")
-          due_date=$(jq -r '.dueOn // ""' <<< "$milestone")
-          
-          # Skip if milestone already exists
-          if gh milestone list | grep -q -w "$title"; then
-            echo "Skipping existing milestone: $title"
-            continue
-          fi
-          
-          echo "Creating milestone: $title"
-          cmd="gh milestone create \"$title\""
-          [ -n "$description" ] && cmd+=" --description \"$description\""
-          [ -n "$due_date" ] && cmd+=" --due-date \"$due_date\""
-          eval "$cmd"
-        done
-        echo "Milestone restoration completed."
-
-    - name: Restore Issues
-      if: env.RESTORE_ISSUES == 'true'
-      shell: bash
-      run: |
-        echo "${{ github.token }}" | gh auth login --with-token
-        echo "Restoring issues..."
-        jq -c '.[]' repo-metadata/issues.json | while read issue; do
-          title=$(jq -r '.title' <<< "$issue")
-          body=$(jq -r '.body' <<< "$issue")
-          labels=$(jq -r '.labels[].name' <<< "$issue" | tr '\n' ',' | sed 's/,$//')
-          state=$(jq -r '.state' <<< "$issue")
-          
-          # Skip if issue already exists
-          if gh issue list --json title -q ".[] | select(.title == \"$title\")" | grep -q .; then
-            echo "Skipping existing issue: $title"
-            continue
-          fi
-          
-          echo "Creating issue: $title"
-          gh issue create --title "$title" --body "$body" --label "$labels"
-          
-          if [ "$state" = "CLOSED" ]; then
-            issue_number=$(gh issue list --json number,title -q ".[] | select(.title == \"$title\") | .number")
-            if [ -n "$issue_number" ]; then
-              echo "Closing issue: $title"
-              gh issue close "$issue_number"
-            fi
-          fi
-        done
-        echo "Issue restoration completed."
 
