@@ -9,9 +9,6 @@ inputs:
   encryption_key:
     description: 'Secret key for decrypting the backup'
     required: true
-  restore_github_token:
-    description: 'Token for repository mirror'
-    required: true
   record_id:
     description: 'Enter RECORD_ID to retrieve a specific backup file.'
     required: false
