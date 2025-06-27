@@ -130,14 +130,14 @@ runs:
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
         mkdir repo-mirror
-        tar -xf repo.tar -C repo-mirror
+        tar -xf repo.tar -C .
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
 
     - name: Git Configuration
       shell: bash
       run: |
-        cd repo-backup
+        cd repo-mirror
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         git config url."https://x-access-token:${{ github.token }}@github.com/".insteadOf https://github.com/
