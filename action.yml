@@ -148,20 +148,20 @@ runs:
         if [ -z "${{ inputs.restore_github_token }}" ]; then
           echo "Removing workflows directory (no token supplied)..."
           rm -rf .github/workflows
-          TOKEN_TO_USE="${{ inputs.restore_github_token }}"
+          TOKEN_TO_USE="${{ github.token }}"
         else
           echo "Using supplied restore_github_token for full mirror..."
-          TOKEN_TO_USE="${{ github.token }}"
+          TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
 
         # Persist for downstream steps
         echo "TOKEN_TO_USE=$TOKEN_TO_USE" >> $GITHUB_ENV
         
-        git config url."https://x-access-token:${{ TOKEN_TO_USE }}@github.com/".insteadOf https://github.com/
+        git config url."https://x-access-token:${TOKEN_TO_USE}@github.com/".insteadOf https://github.com/
 
     - name: Push Restored Repository
       shell: bash
       run: |
         cd repo-mirror
-        git remote set-url origin https://x-access-token:${{ TOKEN_TO_USE }}@github.com/${{ github.repository }}.git
+        git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
         git push --mirror
