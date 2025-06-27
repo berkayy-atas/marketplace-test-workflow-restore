@@ -151,12 +151,5 @@ runs:
         sudo apt-get update -qq
         sudo apt-get install -y gh -qq
         echo "${{ github.token }}" | gh auth login --with-token
-
-    - name: Push Mirror to GitHub
-      shell: bash
-      run: |
-        cd repo-mirror
         git push --mirror origin
-        
-
 
