@@ -145,9 +145,14 @@ runs:
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         
-        echo "Removing workflows directory (no token supplied)..."
-        rm -rf .github/workflows
-        TOKEN_TO_USE="${{ github.token }}"
+        if [ -z "${{ inputs.restore_github_token }}" ]; then
+          echo "Removing workflows directory (no token supplied)..."
+          rm -rf .github/workflows
+          TOKEN_TO_USE="${{ github.token }}"
+        else
+          echo "Using supplied restore_github_token for full mirror..."
+          TOKEN_TO_USE="${{ inputs.restore_github_token }}"
+        fi
 
         # Persist for downstream steps
         echo "TOKEN_TO_USE=$TOKEN_TO_USE" >> $GITHUB_ENV
