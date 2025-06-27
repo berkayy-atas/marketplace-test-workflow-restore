@@ -134,22 +134,13 @@ runs:
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
 
-    - name: Prepare Mirror and Authenticate
+    - name: Configure Git and Push Mirror
       shell: bash
       run: |
         cd repo-mirror
-        git config user.name "myapp File Security"
-        git config user.email "file-security@myapp.com"
-        git remote remove origin
-        git remote add origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
-
-        # Install and authenticate GitHub CLI
-        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-          | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-          | sudo tee /etc/apt/sources.list.d/github-cli.list
-        sudo apt-get update -qq
-        sudo apt-get install -y gh -qq
-        echo "${{ github.token }}" | gh auth login --with-token
-        git push --mirror origin
-
+        git config user.name "file-security bot"
+        git config user.email "noreply@github.com"
+        # Use the built-in GITHUB_TOKEN for authentication
+        git remote set-url origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        # Push all refs and tags back to GitHub
+        git push --mirror
