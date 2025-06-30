@@ -176,16 +176,25 @@ runs:
         
         # Tüm branch'leri listele ve işle
         git fetch --all
-        branches=$(git branch -r | grep -v HEAD | sed 's/origin\///' | tr -d ' ')
+        branches=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -v HEAD | sed 's/origin\///')
         
         # Varsayılan branch'i bul
         default_branch=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
         [ -z "$default_branch" ] && default_branch="main"
         
+        # Önce varsayılan branch'e geç
+        git checkout "$default_branch"
+        
         # Tüm branch'leri işle
         for branch in $branches; do
-          # Branch'i local'e al
-          git checkout -b "$branch" "origin/$branch" --no-track
+          # Branch zaten local'de var mı kontrol et
+          if git show-ref --verify --quiet refs/heads/"$branch"; then
+            echo "Branch $branch already exists locally, checking out"
+            git checkout "$branch"
+          else
+            echo "Creating local branch $branch from origin/$branch"
+            git checkout -b "$branch" "origin/$branch" --no-track
+          fi
           
           # Workflow dizinini sil
           if [ -d ".github/workflows" ]; then
