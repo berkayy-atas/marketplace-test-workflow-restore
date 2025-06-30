@@ -133,19 +133,40 @@ runs:
         openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_key }}
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
-        mkdir extracted
-        tar -xf repo.tar -C extracted
+        tar -xf repo.tar
         rm -f repo.tar repo.tar.zst
         
-        # Mirror repo'yu düzgün şekilde taşı
-        mv extracted/repo-mirror repo-mirror
-        rm -rf extracted
+        # Mirror dizinini bul ve yeniden adlandır
+        if [ -d "repo-mirror" ]; then
+          echo "Found repo-mirror directory"
+        else
+          # Mirror dizinini bul (adı farklı olabilir)
+          mirror_dir=$(find . -maxdepth 1 -type d -name "*mirror*" | head -1)
+          if [ -n "$mirror_dir" ]; then
+            mv "$mirror_dir" repo-mirror
+          else
+            # Eğer mirror dizini yoksa, mevcut dizini mirror olarak kabul et
+            echo "No mirror directory found, using current directory as repo-mirror"
+            mkdir -p repo-mirror
+            mv * .[^.]* repo-mirror/ || true
+          fi
+        fi
         
-        # Bare repository'yi normal repoya dönüştür
-        cd repo-mirror
-        git config --unset core.bare
-        git reset --hard
         echo "Decryption and extraction complete."
+    
+    - name: Convert Bare to Normal Repository
+      shell: bash
+      run: |
+        # Bare repository'yi normal repoya dönüştür
+        mkdir restored-repo
+        git clone repo-mirror restored-repo
+        
+        # Orijinal mirror'ı sil
+        rm -rf repo-mirror
+        mv restored-repo repo-mirror
+        cd repo-mirror
+        
+        echo "Successfully converted bare repository to normal repository"
     
     - name: Remove Workflows from All Branches
       if: ${{ !inputs.restore_github_token }}
@@ -153,19 +174,18 @@ runs:
       run: |
         cd repo-mirror
         
-        # Uzak branch'leri al
-        git fetch origin
+        # Tüm branch'leri listele ve işle
+        git fetch --all
+        branches=$(git branch -r | grep -v HEAD | sed 's/origin\///' | tr -d ' ')
         
-        # Tüm branch'leri listele
-        branches=$(git branch -r | grep -v HEAD | sed 's/origin\///')
-        
-        # Varsayılan branch'i al
+        # Varsayılan branch'i bul
         default_branch=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
-        git checkout $default_branch
+        [ -z "$default_branch" ] && default_branch="main"
         
+        # Tüm branch'leri işle
         for branch in $branches; do
-          # Branch'i kontrol et ve temizle
-          git checkout -b $branch origin/$branch
+          # Branch'i local'e al
+          git checkout -b "$branch" "origin/$branch" --no-track
           
           # Workflow dizinini sil
           if [ -d ".github/workflows" ]; then
@@ -173,7 +193,7 @@ runs:
             git add .github/workflows
             
             # Değişiklik varsa commit et
-            if ! git diff-index --quiet HEAD --; then
+            if [ -n "$(git status --porcelain .github/workflows)" ]; then
               git config user.name "myapp File Security"
               git config user.email "file-security@myapp.com"
               git commit -m "Remove workflows during restore"
@@ -182,7 +202,7 @@ runs:
         done
         
         # Varsayılan branch'e geri dön
-        git checkout $default_branch
+        git checkout "$default_branch"
     
     - name: Configure Git and Push
       shell: bash
@@ -194,9 +214,9 @@ runs:
         else
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
-
+    
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
         git push --mirror --force
-  
+      
