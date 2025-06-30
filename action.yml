@@ -167,6 +167,20 @@ runs:
         cd repo-mirror
         
         echo "Successfully converted bare repository to normal repository"
+
+    - name: Verify Backup Contents
+      shell: bash
+      run: |
+        
+        # Repo içeriğini kontrol et
+        cd repo-mirror
+        echo "--- All References ---"
+        git show-ref
+        echo "--- Branches ---"
+        git branch -a
+        echo "--- Tags ---"
+        git tag -l
+
     
     - name: Remove Workflows from All Branches
       if: ${{ !inputs.restore_github_token }}
@@ -259,16 +273,3 @@ runs:
         # 4. Branch listesini log'a yaz
         echo "Pushed branches:"
         git branch -a
-
-    - name: Verify Backup Contents
-      shell: bash
-      run: |
-        
-        # Repo içeriğini kontrol et
-        cd repo-mirror
-        echo "--- All References ---"
-        git show-ref
-        echo "--- Branches ---"
-        git branch -a
-        echo "--- Tags ---"
-        git tag -l
