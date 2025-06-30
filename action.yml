@@ -134,7 +134,7 @@ runs:
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
         mkdir restore-mirror
-        tar -xf repo.tar -C restore-mirror
+        tar -xf repo.tar -C .
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
         
