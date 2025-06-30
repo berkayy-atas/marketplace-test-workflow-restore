@@ -129,61 +129,74 @@ runs:
     - name: Decrypt and Extract Backup
       shell: bash
       run: |
-        echo "Decryption repository"
+        echo "Decrypting repository"
         openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_key }}
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
-        mkdir restore-mirror
-        tar -xf repo.tar -C .
+        mkdir extracted
+        tar -xf repo.tar -C extracted
         rm -f repo.tar repo.tar.zst
-        echo "Decryption and extraction complete."
         
-        # Patch HEAD if needed (ensure valid branch reference)
+        # Mirror repo'yu düzgün şekilde taşı
+        mv extracted/repo-mirror repo-mirror
+        rm -rf extracted
+        
+        # Bare repository'yi normal repoya dönüştür
         cd repo-mirror
-        if [ ! -f HEAD ] || ! grep -q 'ref:' HEAD; then
-          echo "ref: refs/heads/main" > HEAD
-        fi
-
-    - name: Remove Workflows from All Branches (if no PAT)
+        git config --unset core.bare
+        git reset --hard
+        echo "Decryption and extraction complete."
+    
+    - name: Remove Workflows from All Branches
       if: ${{ !inputs.restore_github_token }}
       shell: bash
       run: |
         cd repo-mirror
-
-        git config --local user.name "myapp File Security"
-        git config --local user.email "file-security@myapp.com"
-
-        # Create temporary worktree for editing
-        mkdir ../worktree-temp || true
-        git worktree add ../worktree-temp main || exit 0
-
-        cd ../worktree-temp
-
-        for branch in $(git branch -r | grep -v '\->' | sed 's/origin\///'); do
-          git checkout -B "$branch" "origin/$branch"
+        
+        # Uzak branch'leri al
+        git fetch origin
+        
+        # Tüm branch'leri listele
+        branches=$(git branch -r | grep -v HEAD | sed 's/origin\///')
+        
+        # Varsayılan branch'i al
+        default_branch=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
+        git checkout $default_branch
+        
+        for branch in $branches; do
+          # Branch'i kontrol et ve temizle
+          git checkout -b $branch origin/$branch
+          
+          # Workflow dizinini sil
           if [ -d ".github/workflows" ]; then
             rm -rf .github/workflows
-            git add -u .github/workflows || true
-            git commit -m "Remove workflows due to lack of PAT" || true
+            git add .github/workflows
+            
+            # Değişiklik varsa commit et
+            if ! git diff-index --quiet HEAD --; then
+              git config user.name "myapp File Security"
+              git config user.email "file-security@myapp.com"
+              git commit -m "Remove workflows during restore"
+            fi
           fi
         done
-
-        cd ../repo-mirror
-        git worktree prune
-
+        
+        # Varsayılan branch'e geri dön
+        git checkout $default_branch
+    
     - name: Configure Git and Push
       shell: bash
       run: |
         cd repo-mirror
-
+        
         if [ -z "${{ inputs.restore_github_token }}" ]; then
           TOKEN_TO_USE="${{ github.token }}"
         else
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
 
-        git config --local user.name "myapp File Security"
-        git config --local user.email "file-security@myapp.com"
+        git config user.name "myapp File Security"
+        git config user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
-
         git push --mirror --force
+  
