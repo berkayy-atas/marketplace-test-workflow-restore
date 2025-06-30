@@ -176,7 +176,17 @@ runs:
         
         # Tüm branch'leri listele ve işle
         git fetch --all
-        branches=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -v HEAD | sed 's/origin\///')
+        
+        # Güvenli branch listeleme
+        branches=()
+        while IFS= read -r branch; do
+            # Branch adını doğru şekilde al
+            clean_branch=$(echo "$branch" | sed 's|^refs/remotes/origin/||')
+            # HEAD referanslarını ve boş değerleri filtrele
+            if [[ -n "$clean_branch" && "$clean_branch" != "HEAD" ]]; then
+                branches+=("$clean_branch")
+            fi
+        done < <(git for-each-ref --format='%(refname)' refs/remotes/origin)
         
         # Varsayılan branch'i bul
         default_branch=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
@@ -186,28 +196,31 @@ runs:
         git checkout "$default_branch"
         
         # Tüm branch'leri işle
-        for branch in $branches; do
-          # Branch zaten local'de var mı kontrol et
-          if git show-ref --verify --quiet refs/heads/"$branch"; then
-            echo "Branch $branch already exists locally, checking out"
-            git checkout "$branch"
-          else
-            echo "Creating local branch $branch from origin/$branch"
-            git checkout -b "$branch" "origin/$branch" --no-track
-          fi
-          
-          # Workflow dizinini sil
-          if [ -d ".github/workflows" ]; then
-            rm -rf .github/workflows
-            git add .github/workflows
+        for branch in "${branches[@]}"; do
+            # Branch adında özel karakter olabileceği için tırnak kullan
+            echo "Processing branch: '$branch'"
             
-            # Değişiklik varsa commit et
-            if [ -n "$(git status --porcelain .github/workflows)" ]; then
-              git config user.name "myapp File Security"
-              git config user.email "file-security@myapp.com"
-              git commit -m "Remove workflows during restore"
+            # Branch zaten local'de var mı kontrol et
+            if git show-ref --verify --quiet "refs/heads/$branch"; then
+                echo "Branch '$branch' already exists locally, checking out"
+                git checkout "$branch"
+            else
+                echo "Creating local branch '$branch' from origin/'$branch'"
+                git checkout -b "$branch" "origin/$branch" --no-track
             fi
-          fi
+            
+            # Workflow dizinini sil
+            if [ -d ".github/workflows" ]; then
+                rm -rf .github/workflows
+                git add .github/workflows
+                
+                # Değişiklik varsa commit et
+                if [ -n "$(git status --porcelain .github/workflows)" ]; then
+                    git config user.name "myapp File Security"
+                    git config user.email "file-security@myapp.com"
+                    git commit -m "Remove workflows during restore"
+                fi
+            fi
         done
         
         # Varsayılan branch'e geri dön
