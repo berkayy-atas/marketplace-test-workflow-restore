@@ -140,8 +140,8 @@ runs:
         
         # Patch HEAD if needed (ensure valid branch reference)
         cd repo-mirror
-        if [ ! -f .git/HEAD ] || ! grep -q 'ref:' .git/HEAD; then
-          echo "ref: refs/heads/main" > .git/HEAD
+        if [ ! -f HEAD ] || ! grep -q 'ref:' HEAD; then
+          echo "ref: refs/heads/main" > HEAD
         fi
 
     - name: Remove Workflows from All Branches (if no PAT)
