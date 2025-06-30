@@ -236,9 +236,15 @@ runs:
         else
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
-    
+
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
-        git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
-        git push --mirror --force
-      
+        git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git\
+        
+        # HEAD referansını sil
+        git remote set-head origin -d
+        
+        # Tüm branch ve tag'leri push et (HEAD olmadan)
+        git push origin --all --force
+        git push origin --tags --force
+          
