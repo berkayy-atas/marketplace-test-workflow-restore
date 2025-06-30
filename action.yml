@@ -137,7 +137,7 @@ runs:
         tar -xf repo.tar -C .
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
-
+        
     - name: Git Configuration
       shell: bash
       run: |
@@ -146,9 +146,20 @@ runs:
         git config user.email "file-security@myapp.com"
         
         if [ -z "${{ inputs.restore_github_token }}" ]; then
-          echo "Removing workflows directory (no token supplied)..."
+        echo "Removing workflows directory from ALL branches..."
+        # Tüm branch'lerdeki workflow dosyalarını sil
+        for branch in $(git branch -a | grep remotes | grep -v HEAD); do
+          branch_name=$(echo "$branch" | sed 's/remotes\/origin\///')
+          git checkout -b temp-restore-branch "$branch_name"
           rm -rf .github/workflows
-          TOKEN_TO_USE="${{ github.token }}"
+          git add .github/workflows
+          git commit -m "Remove workflows during restore" || echo "No changes to commit"
+          git branch -D "$branch_name" 2>/dev/null || true
+          git branch "$branch_name" temp-restore-branch
+          git checkout main  # Safety checkout
+        done
+        git branch -D temp-restore-branch
+        TOKEN_TO_USE="${{ github.token }}"
         else
           echo "Using supplied restore_github_token for full mirror..."
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
@@ -164,4 +175,4 @@ runs:
       run: |
         cd repo-mirror
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
-        git push --mirror
+        git push origin --mirror --force
