@@ -240,19 +240,23 @@ runs:
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
-        
+
         # HEAD referansını sil
         git remote set-head origin -d
+
+        # Tüm ref'leri push et (kapsamlı yöntem)
+        git push origin --force 'refs/heads/*:refs/heads/*'
+        git push origin --force 'refs/remotes/origin/*:refs/heads/*'
+        git push origin --force 'refs/tags/*:refs/tags/*'
         
-        # Tüm branch'leri ve tag'leri tek seferde push et
-        git push origin --force 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*'
-        
-        # Özel branch'leri güncelle
-        git show-ref | grep 'refs/remotes/origin/' | while read sha ref; do
-            branch_name=${ref#refs/remotes/origin/}
-            # HEAD referanslarını atla
-            if [[ $branch_name != "HEAD" ]]; then
-                echo "Updating branch: $branch_name"
-                git push origin "$sha:refs/heads/$branch_name" --force
+        # Alternatif: Tüm referansları tek komutta push et
+        git show-ref | grep -v ' refs/remotes/origin/HEAD$' | while read sha ref; do
+            # Remote branch'leri heads olarak push et
+            if [[ $ref == refs/remotes/origin/* ]]; then
+                new_ref="refs/heads/${ref#refs/remotes/origin/}"
+                git push origin "$sha:$new_ref" --force
+            # Diğer referansları olduğu gibi push et
+            else
+                git push origin "$sha:$ref" --force
             fi
         done
