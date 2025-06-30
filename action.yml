@@ -240,16 +240,20 @@ runs:
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
-        
+
         # HEAD referansını sil
         git remote set-head origin -d
-        
-        # Tüm ref'leri explicit olarak push et
-        git push origin --force refs/heads/*:refs/heads/*
-        git push origin --force refs/tags/*:refs/tags/*
 
-        # Referansları senkronize et
+        # Tüm branch'leri explicit olarak push et
+        git push origin --force refs/heads/*:refs/heads/*
+
+        # Tüm tag'leri explicit olarak push et
+        git push origin --force refs/tags/*:refs/tags/*
+        
+        # Remote branch'leri güncelle (tracking olmadan)
         git fetch origin
-        git branch -r | grep -v '\->' | while read remote; do git branch --track "${remote#origin/}" "$remote"; done
-        git push origin --all --force
-        git push origin --tags --force
+        git for-each-ref --format='%(refname:short)' refs/remotes/origin | while read branch; do
+            branch_name=${branch#origin/}
+            # Branch zaten push edildi, sadece güncelle
+            git push origin "refs/remotes/$branch:refs/heads/$branch_name" --force
+        done
