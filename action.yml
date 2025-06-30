@@ -250,26 +250,27 @@ runs:
         else
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
-
+    
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
         
-        # 1. Tüm referansları doğrudan push et
-        git push origin --force 'refs/*:refs/*'
+        # HEAD referansını sil
+        git remote set-head origin -d
         
-        # 2. Alternatif: Eksik kalan branch'ler için
-        git show-ref | while read sha ref; do
-          # HEAD referanslarını atla
-          if [[ $ref != *"/HEAD" ]]; then
-            git push origin "${ref}:${ref}" --force
-          fi
+        # Tüm ref'leri push et (kapsamlı yöntem)
+        git push origin --force 'refs/heads/*:refs/heads/*'
+        git push origin --force 'refs/remotes/origin/*:refs/heads/*'
+        git push origin --force 'refs/tags/*:refs/tags/*'
+        
+        # Alternatif: Tüm referansları tek komutta push et
+        git show-ref | grep -v ' refs/remotes/origin/HEAD$' | while read sha ref; do
+            # Remote branch'leri heads olarak push et
+            if [[ $ref == refs/remotes/origin/* ]]; then
+                new_ref="refs/heads/${ref#refs/remotes/origin/}"
+                git push origin "$sha:$new_ref" --force
+            # Diğer referansları olduğu gibi push et
+            else
+                git push origin "$sha:$ref" --force
+            fi
         done
-        
-        # 3. Son kontrol
-        git push origin --all --force
-        git push origin --tags --force
-        
-        # 4. Branch listesini log'a yaz
-        echo "Pushed branches:"
-        git branch -a
