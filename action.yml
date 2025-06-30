@@ -134,65 +134,56 @@ runs:
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
         mkdir restore-mirror
-        tar -xf repo.tar -C .
+        tar -xf repo.tar -C restore-mirror
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
         
-        # Bare repository'yi normal repoya dönüştür
+        # Patch HEAD if needed (ensure valid branch reference)
         cd repo-mirror
-        mv .git ..   # .git dizinini geçici olarak taşı
-        cd ..
-        rm -rf repo-mirror
-        mkdir repo-mirror
-        mv .git repo-mirror/.git
-        cd repo-mirror
-        git config --unset core.bare
-        git reset --hard
-    
-    - name: Remove Workflows from All Branches
+        if [ ! -f .git/HEAD ] || ! grep -q 'ref:' .git/HEAD; then
+          echo "ref: refs/heads/main" > .git/HEAD
+        fi
+
+    - name: Remove Workflows from All Branches (if no PAT)
       if: ${{ !inputs.restore_github_token }}
       shell: bash
       run: |
         cd repo-mirror
-        
-        # Tüm branch'leri al
-        branches=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -v HEAD | sed 's/origin\///')
-        
-        # Default branch'i bul ve checkout yap
-        default_branch=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
-        git checkout $default_branch
-        
-        for branch in $branches; do
-          echo "Processing branch: $branch"
-          git checkout $branch
-          
-          # Workflow dizinini sil
-          rm -rf .github/workflows
-          
-          # Değişiklik varsa commit et
-          if [ -n "$(git status --porcelain .github/workflows)" ]; then
-            git add .github/workflows
-            git config user.name "myapp File Security"
-            git config user.email "file-security@myapp.com"
-            git commit -m "Remove workflows during restore"
+
+        git config --local user.name "myapp File Security"
+        git config --local user.email "file-security@myapp.com"
+
+        # Create temporary worktree for editing
+        mkdir ../worktree-temp || true
+        git worktree add ../worktree-temp main || exit 0
+
+        cd ../worktree-temp
+
+        for branch in $(git branch -r | grep -v '\->' | sed 's/origin\///'); do
+          git checkout -B "$branch" "origin/$branch"
+          if [ -d ".github/workflows" ]; then
+            rm -rf .github/workflows
+            git add -u .github/workflows || true
+            git commit -m "Remove workflows due to lack of PAT" || true
           fi
         done
-        
-        # Default branch'e geri dön
-        git checkout $default_branch
-    
+
+        cd ../repo-mirror
+        git worktree prune
+
     - name: Configure Git and Push
       shell: bash
       run: |
         cd repo-mirror
-        
+
         if [ -z "${{ inputs.restore_github_token }}" ]; then
           TOKEN_TO_USE="${{ github.token }}"
         else
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
 
-        git config user.name "myapp File Security"
-        git config user.email "file-security@myapp.com"
+        git config --local user.name "myapp File Security"
+        git config --local user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
+
         git push --mirror --force
