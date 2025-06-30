@@ -175,7 +175,7 @@ runs:
         else
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
-    
+
         echo "TOKEN_TO_USE=$TOKEN_TO_USE" >> $GITHUB_ENV
         git config url."https://x-access-token:${TOKEN_TO_USE}@github.com/".insteadOf https://github.com/
     
@@ -184,4 +184,4 @@ runs:
       run: |
         cd repo-mirror
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
-      git push --mirror --force
+        git push --mirror --force
