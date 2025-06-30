@@ -138,37 +138,46 @@ runs:
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
           
-    - name: Git Configuration
+    - name: Prepare Git Environment
       shell: bash
       run: |
-        # Bare repository'yi normal repoya dönüştürmek yerine worktree kullan
+        cd repo-mirror
+        # Bare repository'yi normal repoya dönüştür
+        git config --unset core.bare
+        git reset --hard
+        
+    - name: Remove Workflows from All Branches
+      if: ${{ !inputs.restore_github_token }}
+      shell: bash
+      run: |
         cd repo-mirror
         
-        # Tüm branch'leri listeleyerek her biri için işlem yap
-        for branch in $(git branch -a | grep remotes | grep -v HEAD | sed 's/remotes\/origin\///'); do
-          # Branch adını temizle
-          clean_branch=$(echo $branch | sed 's/^ *//;s/ *$//')
-          
-          # Branch için geçici worktree oluştur
-          git worktree add ../worktree-$clean_branch $clean_branch
-          cd ../worktree-$clean_branch
+        # Tüm branch'leri al
+        branches=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -v HEAD | sed 's/origin\///')
+        
+        for branch in $branches; do
+          echo "Processing branch: $branch"
+          git checkout $branch
           
           # Workflow dizinini sil
-          echo "Processing branch: $clean_branch"
           rm -rf .github/workflows
           
-          # Değişiklikleri commit et
-          git add .github/workflows
-          if ! git diff-index --quiet HEAD --; then
+          # Değişiklik varsa commit et
+          if git status --porcelain | grep .github/workflows; then
+            git add .github/workflows
             git config user.name "myapp File Security"
             git config user.email "file-security@myapp.com"
             git commit -m "Remove workflows during restore"
           fi
-          
-          # Değişiklikleri orijinal mirror'a yansıt
-          cd ../repo-mirror
-          git worktree remove ../worktree-$clean_branch
         done
+        
+        # Main branch'e geri dön
+        git checkout main
+
+    - name: Configure Git and Push
+      shell: bash
+      run: |
+        cd repo-mirror
         
         if [ -z "${{ inputs.restore_github_token }}" ]; then
           TOKEN_TO_USE="${{ github.token }}"
@@ -176,12 +185,7 @@ runs:
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
 
-        echo "TOKEN_TO_USE=$TOKEN_TO_USE" >> $GITHUB_ENV
-        git config url."https://x-access-token:${TOKEN_TO_USE}@github.com/".insteadOf https://github.com/
-    
-    - name: Push Restored Repository
-      shell: bash
-      run: |
-        cd repo-mirror
+        git config user.name "myapp File Security"
+        git config user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
         git push --mirror --force
