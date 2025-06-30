@@ -133,53 +133,47 @@ runs:
         openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_key }}
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
-        mkdir repo-mirror
-        tar -xf repo.tar -C .
+        mkdir restore-repo
+        tar -xf repo.tar -C restore-repo
+        cd restore-repo
+        git init
+        git checkout -f
         rm -f repo.tar repo.tar.zst
         echo "Decryption and extraction complete."
-        
-    - name: Git Configuration
+          
+    - name: Remove Workflows from All Branches
+      if: ${{ !inputs.restore_github_token }}
       shell: bash
       run: |
-        # Bare repository'yi normal repoya dönüştür
-        cd repo-mirror
-        git config --unset core.bare
-        git reset --hard
+        cd restore-repo
+        
+        # Tüm branch'leri al
+        branches=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -v HEAD | sed 's/origin\///')
+        
+        for branch in $branches; do
+          git checkout -b $branch origin/$branch
+          rm -rf .github/workflows
+          
+          # Değişiklik varsa commit et
+          if git status --porcelain | grep .github/workflows; then
+            git add .github/workflows
+            git commit -m "Remove workflows during restore"
+          fi
+        done
+    
+    - name: Configure Git and Push
+      shell: bash
+      run: |
+        cd restore-repo
         
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         
         if [ -z "${{ inputs.restore_github_token }}" ]; then
-          echo "Removing workflows directory from ALL branches..."
-          
-          # Tüm branch'lerde dolaş
-          for branch in $(git branch -a | grep remotes | grep -v HEAD | sed 's/remotes\/origin\///'); do
-            git checkout -b $branch origin/$branch
-            
-            # Workflow dizinini sil
-            rm -rf .github/workflows
-            git add .github/workflows
-            
-            # Değişiklikleri commit et (eğer değişiklik varsa)
-            if ! git diff-index --quiet HEAD --; then
-              git commit -m "Remove workflows during restore"
-            fi
-          done
-          
           TOKEN_TO_USE="${{ github.token }}"
         else
-          echo "Using supplied restore_github_token for full mirror..."
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
-
-        # Persist for downstream steps
-        echo "TOKEN_TO_USE=$TOKEN_TO_USE" >> $GITHUB_ENV
-        
-        git config url."https://x-access-token:${TOKEN_TO_USE}@github.com/".insteadOf https://github.com/
-
-    - name: Push Restored Repository
-      shell: bash
-      run: |
-        cd repo-mirror
+    
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
-        git push origin --mirror --force
+        git push --mirror --force
