@@ -239,12 +239,17 @@ runs:
 
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
-        git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git\
+        git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
         
         # HEAD referansını sil
         git remote set-head origin -d
         
-        # Tüm branch ve tag'leri push et (HEAD olmadan)
+        # Tüm ref'leri explicit olarak push et
+        git push origin --force refs/heads/*:refs/heads/*
+        git push origin --force refs/tags/*:refs/tags/*
+
+        # Referansları senkronize et
+        git fetch origin
+        git branch -r | grep -v '\->' | while read remote; do git branch --track "${remote#origin/}" "$remote"; done
         git push origin --all --force
         git push origin --tags --force
-          
