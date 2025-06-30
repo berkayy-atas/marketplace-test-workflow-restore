@@ -250,15 +250,21 @@ runs:
         else
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
-
+    
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
-
-        # 1. Tüm branch'leri refs/heads/ altına taşı
+        
+        # 1. Tüm branch'leri refs/heads/ altına taşı (mevcut branch'leri atla)
         git show-ref | grep 'refs/remotes/origin/' | grep -v 'HEAD$' | while read sha ref; do
             branch_name=${ref#refs/remotes/origin/}
-            git branch "$branch_name" "$sha"
+            # Branch zaten varsa atla
+            if ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
+                git branch "$branch_name" "$sha"
+                echo "Created branch: $branch_name"
+            else
+                echo "Branch $branch_name already exists. Skipping."
+            fi
         done
         
         # 2. HEAD referansını sil
