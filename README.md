@@ -11,6 +11,7 @@ This is designed for empty repositories — it will overwrite all history
 
 ```yaml
 name: Restore Repository
+permissions: write-all
 
 on:
   workflow_dispatch:
@@ -22,14 +23,12 @@ on:
 jobs:
   restore:
     runs-on: ubuntu-latest
-    permissions: write-all
     steps:
       - name: Restore Repository
-        uses: berkayy-atas/marketplace-test-workflow-restore@v1.0.17
+        uses: berkayy-atas/marketplace-test-workflow-restore@latest
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
-          restore_github_token: ${{ secrets.RESTORE_GITHUB_TOKEN }}
           record_id: ${{ github.event.inputs.RECORD_ID }}
 ```
 
