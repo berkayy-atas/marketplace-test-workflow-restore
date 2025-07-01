@@ -58,15 +58,16 @@ runs:
           NOW=$(date +%s)
           FILE_TIME=$(stat -c %Y ".github/file-security-cache/uniqueKey")
           AGE=$((NOW - FILE_TIME))
-          OTP={{ inputs.otp_code }}
+          OTP=OTP="${{ inputs.otp_code }}" 
           
           if [ "$AGE" -gt 90 ] || [ -z "$OTP"  ]; then
             if [ "$AGE" -gt 90 ]; then
               echo "::warning ::OTP session expired. Removing cache."
             else
-              echo "::warning ::OTP value not entered, a new OTP session is being created.
+              echo "::warning ::OTP value not entered, a new OTP session is being created."
             fi
-            rm -rf .github/file-security-cache && 
+            rm -rf .github/file-security-cache/* && 
+            rmdir .github/file-security-cache && 
             sync && 
             mkdir -p .github/file-security-cache && 
             ls -la .github/file-security-cache
