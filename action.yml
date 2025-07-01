@@ -24,7 +24,6 @@ inputs:
 runs:
   using: 'composite'
   steps:
-
     - name: Validate encryption key length
       shell: bash
       run: |
@@ -59,8 +58,9 @@ runs:
           NOW=$(date +%s)
           FILE_TIME=$(stat -c %Y ".github/file-security-cache/uniqueKey")
           AGE=$((NOW - FILE_TIME))
+          OTP={{ inputs.otp_code }}
           
-          if [ "$AGE" -gt 90 ] || [ -z "${{ inputs.otp_code }}"  ]; then
+          if [ "$AGE" -gt 90 ] || [ -z "$OTP"  ]; then
             if [ "$AGE" -gt 90 ]; then
               echo "::warning ::OTP session expired. Removing cache."
             else
