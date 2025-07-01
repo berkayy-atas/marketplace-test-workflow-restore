@@ -44,8 +44,10 @@ runs:
       uses: actions/cache@v3
       with:
         path: .github/file-security-cache
-        key: otp-session-${{ github.repository_id }}
-        restore-keys: otp-session-
+        key: otp-session-${{ github.run_id }}-${{ github.run_number }}
+        restore-keys: |
+          otp-session-${{ github.run_id }}-
+          otp-session-
 
     - name: Check for cached uniqueKey
       id: check_cache
@@ -150,7 +152,7 @@ runs:
         exit 1
 
     - name: Validate OTP Session
-      if: ${{ env.CACHE_EXISTS == 'true' && env.CACHE_VALID != 'true' && inputs.otp_code != '' }}
+      if: ${{ env.CACHE_EXISTS == 'true' && inputs.otp_code != '' }}
       shell: bash
       run: |
         NOW=$(date +%s)
@@ -163,9 +165,18 @@ runs:
         else
           echo "CACHE_VALID=true" >> $GITHUB_ENV
         fi
+
+    - name: Debug Environment Variables
+      shell: bash
+      run: |
+        echo "CACHE_EXISTS: $CACHE_EXISTS"
+        echo "CACHE_VALID: $CACHE_VALID"
+        echo "UNIQUE_KEY: $UNIQUE_KEY"
+        echo "OTP_CODE provided: ${{ inputs.otp_code != '' }}"
+        ls -la .github/file-security-cache || echo "No cache directory"
         
     - name: Retrieve Backup
-      if: ${{ env.CACHE_VALID != 'false' && inputs.otp_code != '' }}
+      if: ${{ (env.CACHE_VALID == 'true' || env.CACHE_VALID == '') && inputs.otp_code != '' }}
       shell: bash
       run: |
         echo "Retrieving backup file..."
