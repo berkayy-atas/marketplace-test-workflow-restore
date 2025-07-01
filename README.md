@@ -18,7 +18,7 @@ on:
     inputs:
       otp_code:
         description: 'OTP CODE - Use it as blank for first run. Get OTP code via email and run again with OTP code. OTP code expires after 90 seconds'
-        required: true
+        required: false
 
 jobs:
   restore:
