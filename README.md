@@ -16,7 +16,7 @@ permissions: write-all
 on:
   workflow_dispatch:
     inputs:
-      record_id:
+      otp_code:
         description: 'Record ID'
         required: true
 
@@ -26,10 +26,11 @@ jobs:
     steps:
       - name: Restore Repository
         uses: berkayy-atas/marketplace-test-workflow-restore@latest
-        with:
+        with:record_id
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
-          record_id: ${{ github.event.inputs.RECORD_ID }}
+          otp_code: ${{ github.event.inputs.OTP_CODE }}
+          record_id: 'string'
 ```
 
 ##  🚀 How to Use in a Blank Repository
