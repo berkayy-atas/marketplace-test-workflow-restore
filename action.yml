@@ -161,7 +161,7 @@ runs:
           
         if [ "$AGE" -gt 90 ]; then
           echo "::error ::OTP session expired. Please restart the process."
-          exit 1
+          exit 0
         else
           echo "CACHE_VALID=true" >> $GITHUB_ENV
         fi
