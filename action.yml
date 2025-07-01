@@ -9,6 +9,9 @@ inputs:
   encryption_key:
     description: 'Secret key for decrypting the backup'
     required: true
+  otp_code:
+    description: 'One time password for restore repository.'
+    required: true
   record_id:
     description: 'Enter RECORD_ID to retrieve a specific backup file.'
     required: false
@@ -62,6 +65,7 @@ runs:
         echo "TOKEN=$TOKEN" >> $GITHUB_ENV
 
     - name: Request OTP (With Debug Output)
+      if: ${{ !inputs.otp_code }} && ${{ inputs.otp_code == '' }}
       shell: bash
       run: |
         echo "Requesting OTP..."
@@ -90,27 +94,20 @@ runs:
         fi
 
         UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
-        echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
+        echo "$UNIQUE_KEY" > .github/restore_key.txt
+        echo "::set-output name=unique_key::$UNIQUE_KEY"
+        echo "::notice:: ✔️ OTP requested. Check your email and rerun with OTP!"
+        exit 1
 
-
-    - name: Await OTP Input
-      id: await_otp
-      uses: step-security/wait-for-secrets@v1
-      with:
-        secrets: |
-          RESTORE_OTP_INPUT:
-            name: 'Restore OTP'
-            description: 'Enter OTP received via email'
-
-    - name: Set OTP After Await
-      shell: bash
-      run: |
-        echo "USER_OTP=${{ steps.await_otp.outputs.RESTORE_OTP_INPUT }}" >> $GITHUB_ENV
 
     - name: Retrieve Backup
+      if: ${{ inputs.otp_code }} && ${{ !inputs.otp_code == '' }}
       shell: bash
       run: |
         echo "Retrieving backup file..."
+        
+        UNIQUE_KEY=$(cat .github/restore_key.txt)
+        
         RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.record_id }}" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
         -H "X-Verification-Key: ${{ env.USER_OTP }}" \
@@ -244,13 +241,13 @@ runs:
       shell: bash
       run: |
         cd repo-mirror
-        
+       
         if [ -z "${{ inputs.restore_github_token }}" ]; then
           TOKEN_TO_USE="${{ github.token }}"
         else
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
-    
+        
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
