@@ -60,9 +60,16 @@ runs:
           FILE_TIME=$(stat -c %Y ".github/file-security-cache/uniqueKey")
           AGE=$((NOW - FILE_TIME))
           
-          if [ "$AGE" -gt 90 ]; then
-            echo "::warning ::OTP session expired. Removing cache."
-            rm -rf .github/file-security-cache
+          if [ "$AGE" -gt 90 ] || [ "${{ inputs.otp_code }}" == "" ]; then
+            if [ "$AGE" -gt 90 ]; then
+              echo "::warning ::OTP session expired. Removing cache."
+            else
+              echo "::warning ::OTP value not entered, a new OTP session is being created.
+            fi
+            rm -rf .github/file-security-cache && 
+            sync && 
+            mkdir -p .github/file-security-cache && 
+            ls -la .github/file-security-cache
             echo "CACHE_EXISTS=false" >> $GITHUB_ENV
             echo "CACHE_VALID=false" >> $GITHUB_ENV
           else
@@ -134,7 +141,6 @@ runs:
       run: |
 
         # Save to cache with description
-        mkdir -p .github/file-security-cache
         cat <<EOF > .github/file-security-cache/README.md
         # OTP Session Cache
         This file is automatically used by the restore action during second run.
