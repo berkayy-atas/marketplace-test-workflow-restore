@@ -39,6 +39,41 @@ runs:
       with:
         fetch-depth: 0
 
+    - name: Cache OTP Session
+      id: cache-otp
+      uses: actions/cache@v3
+      with:
+        path: .github/file-security-cache
+        key: otp-session-${{ github.repository_id }}
+        restore-keys: otp-session-
+
+    - name: Check for cached uniqueKey
+      id: check_cache
+      shell: bash
+      run: |
+        if [ -f ".github/file-security-cache/uniqueKey" ]; then
+          
+          # Check cache age (90 seconds)
+          NOW=$(date +%s)
+          FILE_TIME=$(stat -c %Y ".github/file-security-cache/uniqueKey")
+          AGE=$((NOW - FILE_TIME))
+          
+          if [ "$AGE" -gt 90 ]; then
+            echo "::warning ::OTP session expired. Removing cache."
+            rm -rf .github/file-security-cache
+            echo "CACHE_EXISTS=false" >> $GITHUB_ENV
+            echo "CACHE_VALID=false" >> $GITHUB_ENV
+          else
+            echo "CACHE_EXISTS=true" >> $GITHUB_ENV
+            echo "UNIQUE_KEY=$(cat .github/file-security-cache/uniqueKey)" >> $GITHUB_ENV
+            echo "CACHE_VALID=true" >> $GITHUB_ENV
+          fi
+        else
+          echo "CACHE_EXISTS=false" >> $GITHUB_ENV
+          echo "CACHE_VALID=false" >> $GITHUB_ENV
+        fi
+
+
     - name: Get Activation Token
       id: get_token
       shell: bash
@@ -64,8 +99,8 @@ runs:
         TOKEN=$(echo "$JSON_BODY" | jq -r '.data.token')
         echo "TOKEN=$TOKEN" >> $GITHUB_ENV
 
-    - name: Request OTP (With Debug Output)
-      if: ${{ !inputs.otp_code }} && ${{ inputs.otp_code == '' }}
+    - name: Request and Cache OTP
+      if: ${{ env.CACHE_EXISTS != 'true' && inputs.otp_code == '' }}
       shell: bash
       run: |
         echo "Requesting OTP..."
@@ -80,37 +115,63 @@ runs:
 
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
         JSON_BODY=$(echo "$RESPONSE" | head -n -1)
-
-        echo "--- RAW API RESPONSE ---"
-        echo "$RESPONSE"
-        echo "-------------------------"
         echo "HTTP STATUS: $HTTP_STATUS"
-        echo "JSON BODY: $JSON_BODY"
 
         if [ "$HTTP_STATUS" -ne 200 ]; then
-          echo "OTP request failed. Status: $HTTP_STATUS"
+          echo "::error :: OTP request failed. Status: $HTTP_STATUS"
           echo "Message: $(echo "$JSON_BODY" | jq -r '.message // .error // .msg // .description // "No error message provided"')"
           exit 1
         fi
 
         UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
-        echo "$UNIQUE_KEY" > .github/restore_key.txt
-        echo "::set-output name=unique_key::$UNIQUE_KEY"
-        echo "::notice:: ✔️ OTP requested. Check your email and rerun with OTP!"
+        echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
+
+    - name: Save the UNIQUE_KEY
+      if: ${{ env.CACHE_EXISTS != 'true' && inputs.otp_code == '' }}
+      shell: bash
+      run: |
+
+        # Save to cache with description
+        mkdir -p .github/file-security-cache
+        cat <<EOF > .github/file-security-cache/README.md
+        # OTP Session Cache
+        This file is automatically used by the restore action during second run.
+        Please do not modify this file manually.
+        
+        Generated at: $(date)
+        Repository: ${{ github.repository }}
+        Run ID: ${{ github.run_id }}
+        EOF
+        echo "$UNIQUE_KEY" > .github/file-security-cache/uniqueKey
+        echo "CACHE_EXISTS=true" >> $GITHUB_ENV
+        echo "OTP requested. UniqueKey cached. Please re-run with OTP."
+        
+        echo "::notice :: ✔️ OTP requested but not provided. Check email and re-run with otp_code."
         exit 1
 
-
+    - name: Validate OTP Session
+      if: ${{ env.CACHE_EXISTS == 'true' && env.CACHE_VALID != 'true' && inputs.otp_code != '' }}
+      shell: bash
+      run: |
+        NOW=$(date +%s)
+        FILE_TIME=$(stat -c %Y ".github/file-security-cache/uniqueKey")
+        AGE=$((NOW - FILE_TIME))
+          
+        if [ "$AGE" -gt 90 ]; then
+          echo "::error ::OTP session expired. Please restart the process."
+          exit 1
+        else
+          echo "CACHE_VALID=true" >> $GITHUB_ENV
+        fi
+        
     - name: Retrieve Backup
-      if: ${{ inputs.otp_code }} && ${{ !inputs.otp_code == '' }}
+      if: ${{ env.CACHE_VALID == 'true' && inputs.otp_code != '' }}
       shell: bash
       run: |
         echo "Retrieving backup file..."
-        
-        UNIQUE_KEY=$(cat .github/restore_key.txt)
-        
         RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.record_id }}" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
-        -H "X-Verification-Key: ${{ env.USER_OTP }}" \
+        -H "X-Verification-Key: ${{ env.otp_code }}" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst.enc)
         echo "Raw API Response: $RESPONSE"
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
@@ -272,8 +333,11 @@ runs:
         
         # 4. Tüm tag'leri push et
         git push origin --tags --force
+
+        # 5. Önbelleği temizle
+        rm -rf .github/file-security-cache
         
-        # 5. Log'ları kontrol et
+        # 6. Log'ları kontrol et
         echo "Pushed branches:"
         git branch -a
         echo "Remote branches:"
