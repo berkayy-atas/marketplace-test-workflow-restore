@@ -196,6 +196,7 @@ runs:
         echo "Backup file retrieved successfully."
 
     - name: Decrypt and Extract Backup
+      if: ${{ inputs.otp_code == '' }}
       shell: bash
       run: |
         echo "Decrypting repository"
@@ -224,6 +225,7 @@ runs:
         echo "Decryption and extraction complete."
     
     - name: Convert Bare to Normal Repository
+      if: ${{ inputs.otp_code == '' }}
       shell: bash
       run: |
         # Bare repository'yi normal repoya dönüştür
@@ -238,6 +240,7 @@ runs:
         echo "Successfully converted bare repository to normal repository"
 
     - name: Verify Backup Contents
+      if: ${{ inputs.otp_code == '' }}
       shell: bash
       run: |
         
@@ -252,7 +255,7 @@ runs:
 
     
     - name: Remove Workflows from All Branches
-      if: ${{ !inputs.restore_github_token }}
+      if: ${{ !inputs.restore_github_token && inputs.otp_code == '' }}
       shell: bash
       run: |
         cd repo-mirror
@@ -310,6 +313,7 @@ runs:
         git checkout "$default_branch"
     
     - name: Configure Git and Push
+      if: ${{ inputs.otp_code == '' }}
       shell: bash
       run: |
         cd repo-mirror
