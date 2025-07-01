@@ -165,7 +165,7 @@ runs:
         fi
         
     - name: Retrieve Backup
-      if: ${{ env.CACHE_VALID == 'true' && inputs.otp_code != '' }}
+      if: ${{ env.CACHE_VALID != 'false' && inputs.otp_code != '' }}
       shell: bash
       run: |
         echo "Retrieving backup file..."
