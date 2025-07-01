@@ -44,9 +44,9 @@ runs:
       uses: actions/cache@v3
       with:
         path: .github/file-security-cache
-        key: otp-session-${{ github.run_id }}-${{ github.run_number }}
+        key: otp-session-${{ github.repository_id }}-${{ github.run_attempt }}
         restore-keys: |
-          otp-session-${{ github.run_id }}-
+          otp-session-${{ github.repository_id }}-
           otp-session-
 
     - name: Check for cached uniqueKey
@@ -149,7 +149,7 @@ runs:
         echo "OTP requested. UniqueKey cached. Please re-run with OTP."
         
         echo "::notice :: ✔️ OTP requested but not provided. Check email and re-run with otp_code."
-        exit 1
+        exit 0
 
     - name: Validate OTP Session
       if: ${{ env.CACHE_EXISTS == 'true' && inputs.otp_code != '' }}
