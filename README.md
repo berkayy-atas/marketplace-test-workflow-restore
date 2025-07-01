@@ -26,7 +26,7 @@ jobs:
     steps:
       - name: Restore Repository
         uses: berkayy-atas/marketplace-test-workflow-restore@latest
-        with:record_id
+        with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
           otp_code: ${{ github.event.inputs.OTP_CODE }}
