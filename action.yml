@@ -182,7 +182,7 @@ runs:
         echo "Retrieving backup file..."
         RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.record_id }}" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
-        -H "X-Verification-Key: ${{ env.otp_code }}" \
+        -H "X-Verification-Key: ${{ inputs.otp_code }}" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst.enc)
         echo "Raw API Response: $RESPONSE"
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
