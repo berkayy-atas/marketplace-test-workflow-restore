@@ -24,7 +24,7 @@ jobs:
   restore:
     runs-on: ubuntu-latest
     steps:
-      - name: Restore Repository
+      - name: "Restore Repository [${{ github.event_name }}] #${{ github.run_number }}: ${{ github.sha }} by ${{ github.actor }}"
         uses: berkayy-atas/marketplace-test-workflow-restore@latest
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
@@ -69,7 +69,7 @@ jobs:
   restore:
     runs-on: ubuntu-latest
     steps:
-      - name: Restore Repository
+      - name: "Restore Repository [${{ github.event_name }}] #${{ github.run_number }}: ${{ github.sha }} by ${{ github.actor }}"
         uses: berkayy-atas/marketplace-test-workflow-restore@latest
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
