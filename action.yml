@@ -65,9 +65,9 @@ runs:
       run: |
         
         if [ ! -d ".github/file-security-cache" ]; then
-          echo "::debug::Cache directory not found"
+          echo "::warning :: Cache directory not found!!!"
           echo "CACHE_VALID=false" >> $GITHUB_ENV
-          exit 0
+          exit 1
         fi
 
         # fileCreatedTime dosyası var mı kontrol et
