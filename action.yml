@@ -43,44 +43,43 @@ runs:
       uses: actions/cache@v3
       with:
         path: .github/file-security-cache
-        key: otp-session-${{ github.repository_id }}-${{ github.run_attempt }}
+        key: otp-session-${{ github.repository_id }}-${{ github.run_id }}
         restore-keys: |
           otp-session-${{ github.repository_id }}-
           otp-session-
+
+    - name: Initialize cache directory
+      shell: bash
+      run: |
+        if [ ! -d ".github/file-security-cache" ]; then
+          echo "::debug::Cache directory not found, creating..."
+          mkdir -p ".github/file-security-cache"
+          echo "CACHE_VALID=false" >> $GITHUB_ENV
+        else
+          echo "::debug::Cache directory already exists"
+        fi
 
     - name: Check for cached uniqueKey
       id: check_cache
       shell: bash
       run: |
-        if [ -f ".github/file-security-cache/uniqueKey" ]; then
+        
+        # Check cache age (90 seconds)
+        NOW=$(date +%s)
+        FILE_TIME=$(cat .github/file-security-cache/fileCreatedTime)
+        AGE=$((NOW - FILE_TIME))
+        OTP=OTP="${{ inputs.otp_code }}" 
           
-          # Check cache age (90 seconds)
-          NOW=$(date +%s)
-          FILE_TIME=$(stat -c %Y ".github/file-security-cache/uniqueKey")
-          AGE=$((NOW - FILE_TIME))
-          OTP=OTP="${{ inputs.otp_code }}" 
-          
-          if [ "$AGE" -gt 90 ] || [ -z "$OTP"  ]; then
-            if [ "$AGE" -gt 90 ]; then
-              echo "::warning ::OTP session expired. Removing cache."
-            else
-              echo "::warning ::OTP value not entered, a new OTP session is being created."
-            fi
-            rm -rf .github/file-security-cache/* && 
-            rmdir .github/file-security-cache && 
-            sync && 
-            mkdir -p .github/file-security-cache && 
-            ls -la .github/file-security-cache
-            echo "CACHE_EXISTS=false" >> $GITHUB_ENV
-            echo "CACHE_VALID=false" >> $GITHUB_ENV
+        if [ "$AGE" -gt 85 ] || [ -z "$OTP"  ]; then
+          if [ "$AGE" -gt 85 ]; then
+            echo "::warning ::OTP session expired. Removing cache. Please repeat the steps."
           else
-            echo "CACHE_EXISTS=true" >> $GITHUB_ENV
-            echo "UNIQUE_KEY=$(cat .github/file-security-cache/uniqueKey)" >> $GITHUB_ENV
-            echo "CACHE_VALID=true" >> $GITHUB_ENV
+            echo "::warning ::OTP value not entered, a new OTP session is being created."
           fi
-        else
-          echo "CACHE_EXISTS=false" >> $GITHUB_ENV
           echo "CACHE_VALID=false" >> $GITHUB_ENV
+        else
+          echo "UNIQUE_KEY=$(cat .github/file-security-cache/uniqueKey)" >> $GITHUB_ENV
+          echo "CACHE_VALID=true" >> $GITHUB_ENV
         fi
 
 
@@ -110,7 +109,7 @@ runs:
         echo "TOKEN=$TOKEN" >> $GITHUB_ENV
 
     - name: Request and Cache OTP
-      if: ${{ env.CACHE_EXISTS != 'true' && inputs.otp_code == '' }}
+      if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
       shell: bash
       run: |
         echo "Requesting OTP..."
@@ -137,7 +136,7 @@ runs:
         echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
 
     - name: Save the UNIQUE_KEY
-      if: ${{ env.CACHE_EXISTS != 'true' && inputs.otp_code == '' }}
+      if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
       shell: bash
       run: |
 
@@ -152,6 +151,7 @@ runs:
         Run ID: ${{ github.run_id }}
         EOF
         echo "$UNIQUE_KEY" > .github/file-security-cache/uniqueKey
+        date +%s > .github/file-security-cache/fileCreatedTime
         echo "CACHE_EXISTS=true" >> $GITHUB_ENV
         echo "OTP requested. UniqueKey cached. Please re-run with OTP."
         
@@ -163,10 +163,10 @@ runs:
       shell: bash
       run: |
         NOW=$(date +%s)
-        FILE_TIME=$(stat -c %Y ".github/file-security-cache/uniqueKey")
+        FILE_TIME=$(cat .github/file-security-cache/fileCreatedTime)
         AGE=$((NOW - FILE_TIME))
           
-        if [ "$AGE" -gt 90 ]; then
+        if [ "$AGE" -gt 88 ]; then
           echo "::error ::OTP session expired. Please restart the process."
           exit 0
         else
