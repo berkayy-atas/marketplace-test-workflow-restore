@@ -112,11 +112,13 @@ Secret Name	Description
 
 ## Step 2: Configure Token Permissions
 Set these required permissions:
+```yml
 Note: "Repository-Restore-Token"  # Example name
 Expiration: 30 days             # Recommended duration
 Permissions:
 - repo       # Select ALL repository permissions
 - workflow   # Required for workflow restoration
+```
 
 ## Step 3: Add Token to Repository Secrets
 1. In your repository, go to: Settings → Secrets → Actions
