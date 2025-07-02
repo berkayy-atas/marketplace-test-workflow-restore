@@ -118,7 +118,7 @@ Permissions:
 - repo       # Select ALL repository permissions
 - workflow   # Required for workflow restoration
 
-##Step 3: Add Token to Repository Secrets
+## Step 3: Add Token to Repository Secrets
 1. In your repository, go to: Settings → Secrets → Actions
 2. Click New repository secret`
 3. Enter details:
@@ -127,7 +127,7 @@ Permissions:
 Name: RESTORE_PAT_TOKEN  # This will be used in workflow
 Secret: [Paste your generated token here]
 ```
-Step 4: Configure Workflow File
+## Step 4: Configure Workflow File
 
 Add this to your restoration workflow (.github/workflows/restore.yml):
 
