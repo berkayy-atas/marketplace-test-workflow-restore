@@ -64,6 +64,19 @@ runs:
       shell: bash
       run: |
         
+        if [ ! -d ".github/file-security-cache" ]; then
+          echo "::debug::Cache directory not found"
+          echo "CACHE_VALID=false" >> $GITHUB_ENV
+          exit 0
+        fi
+
+        # fileCreatedTime dosyası var mı kontrol et
+        if [ ! -f ".github/file-security-cache/fileCreatedTime" ]; then
+          echo "::debug::fileCreatedTime not found in cache"
+          echo "CACHE_VALID=false" >> $GITHUB_ENV
+          exit 0
+        fi
+        
         # Check cache age (90 seconds)
         NOW=$(date +%s)
         FILE_TIME=$(cat .github/file-security-cache/fileCreatedTime)
