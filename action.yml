@@ -15,6 +15,7 @@ inputs:
   file_version_id:
     description: 'Enter FILE_VERSION_ID to retrieve a specific backup file.'
     required: true
+    default: ''
   restore_github_token:
     description: 'Optional: Token to restore workflows (if provided, full mirror restore with workflows).'
     required: false
@@ -206,15 +207,15 @@ runs:
       shell: bash
       run: |
         
-        if [ ! -f ".github/file-security-cache/fileVersionId" ]; then
+        SAVED_FILE_VERSION_ID=$(cat .github/file-security-cache/fileVersionId
+        
+        if [ ! -f ".github/file-security-cache/fileVersionId" ] && [ -z "$SAVED_FILE_VERSION_ID"  ] ; then
           echo "::warning :: The registered file version id could not be found. Please try your operation again by entering the file version id."
           exit 1
-        else
-          echo "SAVED_FILE_VERSION_ID=$(cat .github/file-security-cache/fileVersionId)" >> $GITHUB_ENV
         fi
         
         echo "Retrieving backup file..."
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ env.SAVED_FILE_VERSION_ID }}" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/$SAVED_FILE_VERSION_ID" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
         -H "X-Verification-Key: ${{ inputs.otp_code }}" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst.enc)
