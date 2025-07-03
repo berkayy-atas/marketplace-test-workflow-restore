@@ -12,8 +12,8 @@ inputs:
   otp_code:
     description: 'One time password for restore repository.'
     required: true
-  record_id:
-    description: 'Enter RECORD_ID to retrieve a specific backup file.'
+  file_version_id:
+    description: 'Enter FILE_VERSION_ID to retrieve a specific backup file.'
     required: false
     default: ''
   restore_github_token:
@@ -200,7 +200,7 @@ runs:
       shell: bash
       run: |
         echo "Retrieving backup file..."
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.record_id }}" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.file_version_id }}" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
         -H "X-Verification-Key: ${{ inputs.otp_code }}" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst.enc)
