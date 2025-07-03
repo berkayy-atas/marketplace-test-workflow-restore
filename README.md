@@ -28,7 +28,7 @@ jobs:
         uses: berkayy-atas/marketplace-test-workflow-restore@latest
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
-          encryption_key: ${{ secrets.ENCRYPTION_KEY }}
+          encryption_password: ${{ secrets.ENCRYPTION_PASSWORD }}
           otp_code: ${{ github.event.inputs.OTP_CODE }}
           record_id: 'string'
 ```
@@ -73,7 +73,7 @@ jobs:
         uses: berkayy-atas/marketplace-test-workflow-restore@latest
         with:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
-          encryption_key: ${{ secrets.ENCRYPTION_KEY }}
+          encryption_password: ${{ secrets.ENCRYPTION_PASSWORD }}
           otp_code: ${{ github.event.inputs.OTP_CODE }}
           record_id: 'string'
 ```
@@ -84,7 +84,7 @@ jobs:
 Secret Name	Description
   - ACTIVATION_CODE:	Your API activation token from File Security
   - RESTORE_GITHUB_TOKEN:	A personal access token (PAT) with repo and workflow access (you can claim your token: "Github Settings -> Developer Settings -> Personal access tokens (classic)") [Scopes: repo, workflow, admin:org, write:discussion] 
-  - ENCRYPTION_KEY: 32+ character decryption key (used during backup)
+  - ENCRYPTION_PASSWORD: 32+ character decryption key (used during backup)
   - record_id: RecordId of the repository version you want to restore. You can find this id in the web UI or in the action outputs of the repository you backed up.
 
 5️⃣ Run the Workflow
@@ -139,7 +139,7 @@ Add this to your restoration workflow (.github/workflows/restore.yml):
   with:
     restore_github_token: ${{ secrets.RESTORE_PAT_TOKEN }}  # Critical for workflows
     activation_code: ${{ secrets.ACTIVATION_CODE }}
-    encryption_key: ${{ secrets.ENCRYPTION_KEY }}
+    encryption_password: ${{ secrets.ENCRYPTION_PASSWORD }}
 ```
 
 ## Features
