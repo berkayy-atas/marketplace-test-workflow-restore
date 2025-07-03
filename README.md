@@ -30,7 +30,7 @@ jobs:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_password: ${{ secrets.ENCRYPTION_PASSWORD }}
           otp_code: ${{ github.event.inputs.OTP_CODE }}
-          record_id: 'string'
+          file_version_id: 'string'
 ```
 
 ##  🚀 How to Use in a Blank Repository
@@ -75,7 +75,7 @@ jobs:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_password: ${{ secrets.ENCRYPTION_PASSWORD }}
           otp_code: ${{ github.event.inputs.OTP_CODE }}
-          record_id: 'string'
+          file_version_id: 'string'
 ```
 4️⃣ Add Required Secrets
   - Go to: Repository → Settings → Secrets and variables → Actions
@@ -85,7 +85,7 @@ Secret Name	Description
   - ACTIVATION_CODE:	Your API activation token from File Security
   - RESTORE_GITHUB_TOKEN:	A personal access token (PAT) with repo and workflow access (you can claim your token: "Github Settings -> Developer Settings -> Personal access tokens (classic)") [Scopes: repo, workflow, admin:org, write:discussion] 
   - ENCRYPTION_PASSWORD: 32+ character decryption key (used during backup)
-  - record_id: RecordId of the repository version you want to restore. You can find this id in the web UI or in the action outputs of the repository you backed up.
+  - file_version_id: File version id of the repository version you want to restore. You can find this id in the web UI or in the action outputs of the repository you backed up.
 
 5️⃣ Run the Workflow
   - Go to the Actions tab in your GitHub repository
