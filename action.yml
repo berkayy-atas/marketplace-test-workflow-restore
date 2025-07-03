@@ -6,7 +6,7 @@ inputs:
   activation_code:
     description: 'Activation code for API'
     required: true
-  encryption_key:
+  encryption_password:
     description: 'Secret key for decrypting the backup'
     required: true
   otp_code:
@@ -24,12 +24,12 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Validate encryption key length
+    - name: Validate encryption password length
       shell: bash
       run: |
-        ENC_KEY="${{ inputs.encryption_key }}"
+        ENC_PASS="${{ inputs.encryption_password }}"
         if [ "${#ENC_KEY}" -lt 32 ]; then
-          echo "::error ::The encryption_key must be at least 32 characters long (got ${#ENC_KEY})."
+          echo "::error ::The encryption_password must be at least 32 characters long (got ${#ENC_PASS})."
           exit 1
         fi
         
@@ -220,7 +220,7 @@ runs:
       shell: bash
       run: |
         echo "Decrypting repository"
-        openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_key }}
+        openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_password }}
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
         tar -xf repo.tar
@@ -368,11 +368,8 @@ runs:
         
         # 4. Tüm tag'leri push et
         git push origin --tags --force
-
-        # 5. Önbelleği temizle
-        rm -rf .github/file-security-cache
         
-        # 6. Log'ları kontrol et
+        # 5. Log'ları kontrol et
         echo "Pushed branches:"
         git branch -a
         echo "Remote branches:"
