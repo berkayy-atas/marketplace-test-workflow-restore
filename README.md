@@ -19,6 +19,9 @@ on:
       otp_code:
         description: 'OTP CODE - Use it as blank for first run. Get OTP code via email and run again with OTP code. OTP code expires after 90 seconds'
         required: false
+      file_version_id:
+        description: 'The version id of the file you want to restore. You can enter it in the first or second run while using the workflow. The version id you last entered is always kept and restored when the OTP code arrives.'
+        required: false
 
 jobs:
   restore:
@@ -30,7 +33,7 @@ jobs:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_password: ${{ secrets.ENCRYPTION_PASSWORD }}
           otp_code: ${{ github.event.inputs.OTP_CODE }}
-          file_version_id: 'string'
+          file_version_id: ${{ github.event.inputs.FILE_VERSION_ID }}
 ```
 
 ##  🚀 How to Use in a Blank Repository
@@ -64,6 +67,9 @@ on:
       otp_code:
         description: 'OTP CODE - Use it as blank for first run. Get OTP code via email and run again with OTP code. OTP code expires after 90 seconds'
         required: false
+      file_version_id:
+        description: 'The version id of the file you want to restore. You can enter it in the first or second run while using the workflow. The version id you last entered is always kept and restored when the OTP code arrives.'
+        required: false
 
 jobs:
   restore:
@@ -75,7 +81,7 @@ jobs:
           activation_code: ${{ secrets.ACTIVATION_CODE }}
           encryption_password: ${{ secrets.ENCRYPTION_PASSWORD }}
           otp_code: ${{ github.event.inputs.OTP_CODE }}
-          file_version_id: 'string'
+          file_version_id: ${{ github.event.inputs.FILE_VERSION_ID }}
 ```
 4️⃣ Add Required Secrets
   - Go to: Repository → Settings → Secrets and variables → Actions
