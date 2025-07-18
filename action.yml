@@ -59,14 +59,6 @@ runs:
           echo "::debug::Cache directory already exists"
         fi
 
-    - name: Cache Provided file_version_id
-      if: ${{ inputs.file_version_id != '' }}
-      shell: bash
-      run: |
-        echo "A file_version_id was provided, caching it: ${{ inputs.file_version_id }}"
-        echo "${{ inputs.file_version_id }}" > .github/file-security-cache/fileVersionId
-        echo "fileVersionIdCached=true" >> $GITHUB_ENV
-
     - name: Check for cached uniqueKey
       id: check_cache
       shell: bash
@@ -91,8 +83,8 @@ runs:
         AGE=$((NOW - FILE_TIME))
         OTP=${{ inputs.otp_code }}
           
-        if [ "$AGE" -gt 85 ] || [ -z "$OTP"  ]; then
-          if [ "$AGE" -gt 85 ]; then
+        if [ "$AGE" -gt 80 ] || [ -z "$OTP"  ]; then
+          if [ "$AGE" -gt 80 ]; then
             echo "::warning ::OTP session expired. Removing cache. Please repeat the steps."
           else
             echo "::warning ::OTP value not entered, a new OTP session is being created."
@@ -103,13 +95,13 @@ runs:
           echo "CACHE_VALID=true" >> $GITHUB_ENV
         fi
         
-    - name: Request and Cache OTP
+    - name: Cache Provided file_version_id
       if: ${{ inputs.file_version_id != '' }}
       shell: bash
       run: |
-        FILE_VERSION_ID=${{ inputs.fileVersionId }} 
-        echo "$FILE_VERSION_ID" > .github/file-security-cache/fileVersionId
-        echo "fileVersionId=$FILE_VERSION_ID" >> $GITHUB_ENV
+        echo "A file_version_id was provided, caching it: ${{ inputs.file_version_id }}"
+        echo "${{ inputs.file_version_id }}" > .github/file-security-cache/fileVersionId
+        echo "fileVersionIdCached=true" >> $GITHUB_ENV
 
     - name: Get Activation Token
       id: get_token
@@ -175,7 +167,6 @@ runs:
       if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
       shell: bash
       run: |
-
         # Save to cache with description
         cat <<EOF > .github/file-security-cache/README.md
         # OTP Session Cache
@@ -202,7 +193,7 @@ runs:
         FILE_TIME=$(cat .github/file-security-cache/fileCreatedTime)
         AGE=$((NOW - FILE_TIME))
           
-        if [ "$AGE" -gt 88 ]; then
+        if [ "$AGE" -gt 85 ]; then
           echo "::error ::OTP session expired. Please restart the process."
           exit 0
         else
