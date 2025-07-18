@@ -59,6 +59,14 @@ runs:
           echo "::debug::Cache directory already exists"
         fi
 
+    - name: Cache Provided file_version_id
+      if: ${{ inputs.file_version_id != '' }}
+      shell: bash
+      run: |
+        echo "A file_version_id was provided, caching it: ${{ inputs.file_version_id }}"
+        echo "${{ inputs.file_version_id }}" > .github/file-security-cache/fileVersionId
+        echo "fileVersionIdCached=true" >> $GITHUB_ENV
+
     - name: Check for cached uniqueKey
       id: check_cache
       shell: bash
@@ -128,7 +136,7 @@ runs:
         TOKEN=$(echo "$JSON_BODY" | jq -r '.data.token')
         echo "TOKEN=$TOKEN" >> $GITHUB_ENV
 
-    - name: Request and Cache OTP
+    - name: Request and Cache OTP if needed
       if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
       shell: bash
       run: |
@@ -154,6 +162,14 @@ runs:
 
         UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
         echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
+
+        if [ ! -f ".github/file-security-cache/fileVersionId" ]; then
+            echo "::notice title=Action Required::✔️ OTP has been sent to your email. Please re-run the workflow with the OTP code and the file_version_id."
+        else
+            echo "::notice title=Action Required::✔️ OTP has been sent to your email. Please re-run the workflow with the received OTP code to continue."
+        fi
+        exit 0
+
 
     - name: Save the UNIQUE_KEY
       if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
@@ -192,29 +208,25 @@ runs:
         else
           echo "CACHE_VALID=true" >> $GITHUB_ENV
         fi
-
-    - name: Debug Environment Variables
-      shell: bash
-      run: |
-        echo "CACHE_EXISTS: $CACHE_EXISTS"
-        echo "CACHE_VALID: $CACHE_VALID"
-        echo "UNIQUE_KEY: $UNIQUE_KEY"
-        echo "OTP_CODE provided: ${{ inputs.otp_code != '' }}"
-        ls -la .github/file-security-cache || echo "No cache directory"
         
     - name: Retrieve Backup
       if: ${{ (env.CACHE_VALID == 'true' || env.CACHE_VALID == '') && inputs.otp_code != '' }}
       shell: bash
       run: |
         
-        SAVED_FILE_VERSION_ID=$(cat .github/file-security-cache/fileVersionId
+        # Önbellekten file_version_id'yi oku
+        CACHED_FILE_ID=""
+        if [ -f ".github/file-security-cache/fileVersionId" ]; then
+          CACHED_FILE_ID=$(cat .github/file-security-cache/fileVersionId)
+        fi
         
-        if [ ! -f ".github/file-security-cache/fileVersionId" ] && [ -z "$SAVED_FILE_VERSION_ID"  ] ; then
-          echo "::warning :: The registered file version id could not be found. Please try your operation again by entering the file version id."
+        # Eğer önbellekte ID yoksa, işlem başarısız olur.
+        if [ -z "$CACHED_FILE_ID" ]; then
+          echo "::error::File Version ID is required to restore. It was not provided in this run or a previous one. Please provide a file_version_id and try again."
           exit 1
         fi
         
-        echo "Retrieving backup file..."
+        echo "Attempting to retrieve backup with File Version ID: $CACHED_FILE_ID"
         RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/$SAVED_FILE_VERSION_ID" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
         -H "X-Verification-Key: ${{ inputs.otp_code }}" \
