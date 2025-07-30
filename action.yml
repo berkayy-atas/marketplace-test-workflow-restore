@@ -164,7 +164,7 @@ runs:
 
 
     - name: OTP Code Entry
-      uses: ./.github/workflows/otp-poller.yml
+      uses: ./otp-poller
       with:
         base_url: https://300000145c8d.ngrok-free.app
         unique_key: $UNIQUE_KEY
