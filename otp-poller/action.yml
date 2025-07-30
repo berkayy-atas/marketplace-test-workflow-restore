@@ -1,48 +1,60 @@
-name: otp-poller
-description: Polls custom .NET server until doğru OTP girilir
+name: Secure OTP Verification
+
+on:
+  workflow_dispatch: {}
+
 inputs:
-  base_url:
-    description: Base URL of OTP server
-    required: true
   unique_key:
     required: true
-outputs:
-  otp:
-    description: Verified OTP code
-runs:
-  using: "composite"
-  steps:
+
+jobs:
+  otp-verification:
+    runs-on: ubuntu-latest
+
+    env:
+      BASE_URL: https://300000145c8d.ngrok-free.app   # kendi tünel adresin
+      WAIT_SECONDS: 120
+
+    steps:
     - name: Install jq
-      shell: bash
       run: sudo apt-get update -y && sudo apt-get install -y jq
 
-    - id: poll
-      name: Wait correct OTP
-      shell: bash
-      env:
-        WAIT_SECONDS: 120
+    # 1) Context + Token + OTP
+    - id: generate
+      name: Generate OTP & show link
       run: |
-        BASE_URL="${{ inputs.base_url }}"
-        UNIQUE_KEY="${{ inputs.unique_key }}"
+        UNIQUE_KEY="${{ inputs.unique_key }}"  
 
-        trap 'curl -s -X POST "$BASE_URL/invalidate?unique_key=$UNIQUE_KEY" >/dev/null || true' EXIT
+        OTP=$(curl -s "$BASE_URL/otp?unique_key=$UNIQUE_KEY" | jq -r '.otp')
 
-        EXPECTED=$(curl -s "$BASE_URL/otp?unique_key=$UNIQUE_KEY" | jq -r '.otp')
 
-        if [[ -z "$EXPECTED" || "$EXPECTED" == "null" ]]; then
-          echo "::error::Sunucudan beklenen OTP alınamadı."
-          exit 1
-        fi
+        echo ""
+        echo "🔑 OTP oluşturuldu."
+        echo "🔐 Tarayıcıda açın:"
+        echo "    $BASE_URL/?unique_key=$UNIQUE_KEY"
+        echo ""
 
-        echo "Tarayıcıda aç: $BASE_URL/?unique_key=$UNIQUE_KEY"
+        echo "$OTP"
+
+        echo "unique_key=$UNIQUE_KEY" >> $GITHUB_OUTPUT
+        echo "otp=$OTP"        >> $GITHUB_OUTPUT
+
+
+    # 2) Bekleme/polling
+    - name: Wait for OTP entry
+      run: |
+        UNIQUE_KEY=${{ steps.generate.outputs.unique_key }}
+        EXPECTED=${{ steps.generate.outputs.otp }}
 
         DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
         while [[ $(date +%s) -lt $DEADLINE ]]; do
-          ENTERED=$(curl -s "$BASE_URL/current-otp?unique_key=$UNIQUE_KEY" | jq -r '.otp // empty')
+          RESPONSE=$(curl -s "$BASE_URL/current-otp?unique_key=$UNIQUE_KEY")
+          ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty')
+
           if [[ -n "$ENTERED" ]]; then
+            echo "Entered OTP $ENTERED"
             if [[ "$ENTERED" == "$EXPECTED" ]]; then
-              echo "✅ Doğru OTP: $ENTERED"
-              echo "otp=$ENTERED" >> "$GITHUB_OUTPUT"
+              echo "✅ Doğru OTP"
               exit 0
             else
               echo "::error::Yanlış OTP"
@@ -51,6 +63,18 @@ runs:
           fi
           sleep 5
         done
-
-        echo "::error::OTP süresi doldu, doğrulama başarısız oldu."
+        echo "::error::Süre doldu"
         exit 1
+
+    # 3) Context’i sil (her durumda)
+    - name: Invalidate on server
+      if: always()
+      run: |
+        UNIQUE_KEY=${{ steps.generate.outputs.unique_key }}
+        curl -s -X POST "$BASE_URL/invalidate?unique_key=$UNIQUE_KEY" > /dev/null || true
+        echo "🧹 Context kaldırıldı (veya zaten yoktu)."
+
+    # 4) Devam
+    - name: Continue workflow
+      if: success()
+      run: echo "🚀 OTP doğrulandı, iş akışı devam ediyor."
