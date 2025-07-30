@@ -1,50 +1,53 @@
-name: Secure OTP Verification
-
-on:
-  workflow_dispatch: {}
+name: 'Secure OTP Verification'
+description: 'Interactive OTP verification using web interface'
+author: 'your-github-username'
 
 inputs:
   unique_key:
+    description: 'Unique key for OTP session'
     required: true
+  base_url:
+    description: 'Base URL for OTP service'
+    required: false
+    default: 'https://300000145c8d.ngrok-free.app'
+  wait_seconds:
+    description: 'Maximum wait time in seconds'
+    required: false
+    default: '120'
 
-jobs:
-  otp-verification:
-    runs-on: ubuntu-latest
-
-    env:
-      BASE_URL: https://300000145c8d.ngrok-free.app   # kendi tünel adresin
-      WAIT_SECONDS: 120
-
-    steps:
-    - name: Install jq
+runs:
+  using: 'composite' 
+  steps:
+    - name: Install dependencies
+      shell: bash
       run: sudo apt-get update -y && sudo apt-get install -y jq
 
-    # 1) Context + Token + OTP
-    - id: generate
-      name: Generate OTP & show link
+    - name: Generate OTP & show link
+      id: generate
+      shell: bash
       run: |
-        UNIQUE_KEY="${{ inputs.unique_key }}"  
-
+        UNIQUE_KEY="${{ inputs.unique_key }}"
+        BASE_URL="${{ inputs.base_url }}"
+        
         OTP=$(curl -s "$BASE_URL/otp?unique_key=$UNIQUE_KEY" | jq -r '.otp')
-
 
         echo ""
         echo "🔑 OTP oluşturuldu."
         echo "🔐 Tarayıcıda açın:"
         echo "    $BASE_URL/?unique_key=$UNIQUE_KEY"
         echo ""
-
-        echo "$OTP"
+        echo "Generated OTP: $OTP"
 
         echo "unique_key=$UNIQUE_KEY" >> $GITHUB_OUTPUT
-        echo "otp=$OTP"        >> $GITHUB_OUTPUT
+        echo "otp=$OTP" >> $GITHUB_OUTPUT
 
-
-    # 2) Bekleme/polling
     - name: Wait for OTP entry
+      shell: bash
       run: |
         UNIQUE_KEY=${{ steps.generate.outputs.unique_key }}
         EXPECTED=${{ steps.generate.outputs.otp }}
+        BASE_URL="${{ inputs.base_url }}"
+        WAIT_SECONDS="${{ inputs.wait_seconds }}"
 
         DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
         while [[ $(date +%s) -lt $DEADLINE ]]; do
@@ -66,15 +69,16 @@ jobs:
         echo "::error::Süre doldu"
         exit 1
 
-    # 3) Context’i sil (her durumda)
     - name: Invalidate on server
       if: always()
+      shell: bash
       run: |
         UNIQUE_KEY=${{ steps.generate.outputs.unique_key }}
+        BASE_URL="${{ inputs.base_url }}"
         curl -s -X POST "$BASE_URL/invalidate?unique_key=$UNIQUE_KEY" > /dev/null || true
         echo "🧹 Context kaldırıldı (veya zaten yoktu)."
 
-    # 4) Devam
     - name: Continue workflow
       if: success()
+      shell: bash
       run: echo "🚀 OTP doğrulandı, iş akışı devam ediyor."

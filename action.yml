@@ -162,13 +162,57 @@ runs:
         fi
         exit 0
 
+    - name: Interactive OTP Verification
+      if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
+      shell: bash
+      env:
+        BASE_URL: https://300000145c8d.ngrok-free.app
+        WAIT_SECONDS: 120
+      run: |
+        # Install jq if not available
+        sudo apt-get update -y && sudo apt-get install -y jq
+        
+        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+        
+        # Generate OTP and show link
+        OTP=$(curl -s "$BASE_URL/otp?unique_key=$UNIQUE_KEY" | jq -r '.otp')
+        
+        echo ""
+        echo "🔑 OTP oluşturuldu."
+        echo "🔐 Tarayıcıda açın:"
+        echo "    $BASE_URL/?unique_key=$UNIQUE_KEY"
+        echo ""
+        echo "Generated OTP: $OTP"
+        
+        # Wait for OTP entry
+        DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
+        while [[ $(date +%s) -lt $DEADLINE ]]; do
+          RESPONSE=$(curl -s "$BASE_URL/current-otp?unique_key=$UNIQUE_KEY")
+          ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty')
 
-    - name: OTP Code Entry
-      uses: ./otp-poller
-      with:
-        unique_key: $UNIQUE_KEY
-
-  
+          if [[ -n "$ENTERED" ]]; then
+            echo "Entered OTP $ENTERED"
+            if [[ "$ENTERED" == "$OTP" ]]; then
+              echo "✅ Doğru OTP"
+              break
+            else
+              echo "::error::Yanlış OTP"
+              exit 1
+            fi
+          fi
+          sleep 5
+        done
+        
+        if [[ $(date +%s) -ge $DEADLINE ]]; then
+          echo "::error::Süre doldu"
+          exit 1
+        fi
+        
+        # Invalidate on server
+        curl -s -X POST "$BASE_URL/invalidate?unique_key=$UNIQUE_KEY" > /dev/null || true
+        echo "🧹 Context kaldırıldı (veya zaten yoktu)."
+        
+        echo "🚀 OTP doğrulandı, iş akışı devam ediyor."
 
     - name: Save the UNIQUE_KEY
       if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
