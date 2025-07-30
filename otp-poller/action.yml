@@ -1,4 +1,6 @@
 name: otp-poller
+uses: actions/checkout@v4
+
 description: Polls custom .NET server until doğru OTP girilir
 inputs:
   base_url:

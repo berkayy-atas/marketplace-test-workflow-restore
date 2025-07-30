@@ -37,8 +37,6 @@ runs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        path: _src 
-        clean: false
 
     - name: Cache OTP Session
       id: cache-otp
@@ -166,10 +164,12 @@ runs:
 
 
     - name: OTP Code Entry
-      uses: ./otp-poller
+      uses: ./.github/workflows/otp-poller.yml
       with:
         base_url: https://300000145c8d.ngrok-free.app
         unique_key: $UNIQUE_KEY
+
+  
 
     - name: Save the UNIQUE_KEY
       if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
