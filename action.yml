@@ -163,6 +163,12 @@ runs:
         exit 0
 
 
+    - name: OTP Code Entry
+      uses: ./otp-poller
+      with:
+        base_url: https://300000145c8d.ngrok-free.app
+        unique_key: $UNIQUE_KEY
+
     - name: Save the UNIQUE_KEY
       if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
       shell: bash
