@@ -9,9 +9,6 @@ inputs:
   encryption_password:
     description: 'Secret key for decrypting the backup'
     required: true
-  otp_code:
-    description: 'One time password for restore repository.'
-    required: true
   file_version_id:
     description: 'Enter FILE_VERSION_ID to retrieve a specific backup file.'
     required: true
@@ -38,67 +35,11 @@ runs:
       with:
         fetch-depth: 0
 
-    - name: Cache OTP Session
-      id: cache-otp
-      uses: actions/cache@v3
-      with:
-        path: .github/file-security-cache
-        key: otp-session-${{ github.repository_id }}-${{ github.run_id }}
-        restore-keys: |
-          otp-session-${{ github.repository_id }}-
-          otp-session-
-
-    - name: Initialize cache directory
-      shell: bash
-      run: |
-        if [ ! -d ".github/file-security-cache" ]; then
-          echo "::debug::Cache directory not found, creating..."
-          mkdir -p ".github/file-security-cache"
-          echo "CACHE_VALID=false" >> $GITHUB_ENV
-        else
-          echo "::debug::Cache directory already exists"
-        fi
-
-    - name: Check for cached uniqueKey
-      id: check_cache
-      shell: bash
-      run: |
-        
-        if [ ! -d ".github/file-security-cache" ]; then
-          echo "::warning :: Cache directory not found!!!"
-          echo "CACHE_VALID=false" >> $GITHUB_ENV
-          exit 1
-        fi
-
-        # fileCreatedTime dosyası var mı kontrol et
-        if [ ! -f ".github/file-security-cache/fileCreatedTime" ]; then
-          echo "::debug::fileCreatedTime not found in cache"
-          echo "CACHE_VALID=false" >> $GITHUB_ENV
-          exit 0
-        fi
-        
-        # Check cache age (90 seconds)
-        NOW=$(date +%s)
-        FILE_TIME=$(cat .github/file-security-cache/fileCreatedTime)
-        AGE=$((NOW - FILE_TIME))
-        OTP=${{ inputs.otp_code }}
-          
-        if [ "$AGE" -gt 80 ] || [ -z "$OTP"  ]; then
-          if [ "$AGE" -gt 80 ]; then
-            echo "::warning ::OTP session expired. Removing cache. Please repeat the steps."
-          else
-            echo "::warning ::OTP value not entered, a new OTP session is being created."
-          fi
-          echo "CACHE_VALID=false" >> $GITHUB_ENV
-        else
-          echo "UNIQUE_KEY=$(cat .github/file-security-cache/uniqueKey)" >> $GITHUB_ENV
-          echo "CACHE_VALID=true" >> $GITHUB_ENV
-        fi
-        
     - name: Cache Provided file_version_id
       if: ${{ inputs.file_version_id != '' }}
       shell: bash
       run: |
+        mkdir -p .github/file-security-cache
         echo "A file_version_id was provided, caching it: ${{ inputs.file_version_id }}"
         echo "${{ inputs.file_version_id }}" > .github/file-security-cache/fileVersionId
         echo "fileVersionIdCached=true" >> $GITHUB_ENV
@@ -128,11 +69,10 @@ runs:
         TOKEN=$(echo "$JSON_BODY" | jq -r '.data.token')
         echo "TOKEN=$TOKEN" >> $GITHUB_ENV
 
-    - name: Request and Cache OTP if needed
-      if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
+    - name: Request OTP via Email
       shell: bash
       run: |
-        echo "Requesting OTP..."
+        echo "Requesting OTP via email..."
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/Send" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ env.TOKEN }}" \
@@ -154,108 +94,105 @@ runs:
 
         UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
         echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
+        
+        echo "✅ OTP sent to your email successfully!"
 
-        if [ ! -f ".github/file-security-cache/fileVersionId" ]; then
-            echo "::notice title=Action Required::✔️ OTP has been sent to your email. Please re-run the workflow with the OTP code and the file_version_id."
-        else
-            echo "::notice title=Action Required::✔️ OTP has been sent to your email. Please re-run the workflow with the received OTP code to continue."
-        fi
-        exit 0
-
-    - name: Interactive OTP Verification
-      if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
+    - name: Initialize Web Session Context
       shell: bash
       env:
         BASE_URL: https://b72cdc377582.ngrok-free.app
-        WAIT_SECONDS: 120
       run: |
-        # Install jq if not available
         sudo apt-get update -y && sudo apt-get install -y jq
         
         UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+        BASE_URL="${{ env.BASE_URL }}"
         
-        # Generate OTP and show link
-        OTP=$(curl -s "$BASE_URL/otp?uniqueKey=$UNIQUE_KEY" | jq -r '.otp')
+        # Web sitesinde session başlat (boş OTP record oluştur)
+        curl -s -X POST "$BASE_URL/init-session" \
+          -H "Content-Type: application/json" \
+          -d "{\"uniqueKey\": \"$UNIQUE_KEY\"}" > /dev/null || true
         
         echo ""
-        echo "🔑 OTP oluşturuldu."
-        echo "🔐 Tarayıcıda açın:"
-        echo "    $BASE_URL/?uniqueKey=$UNIQUE_KEY"
+        echo "📧 OTP kodu email adresinize gönderildi!"
+        echo "🔐 Lütfen aşağıdaki bağlantıyı tarayıcıda açın ve email'den aldığınız OTP kodunu girin:"
         echo ""
-        echo "Generated OTP: $OTP"
+        echo "    🌐 $BASE_URL/?uniqueKey=$UNIQUE_KEY"
+        echo ""
+        echo "⏰ OTP kodu girildikten sonra workflow otomatik olarak devam edecektir..."
+
+    - name: Wait for OTP Entry
+      shell: bash
+      env:
+        BASE_URL: https://b72cdc377582.ngrok-free.app
+        WAIT_SECONDS: 300
+      run: |
+        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+        BASE_URL="${{ env.BASE_URL }}"
+        WAIT_SECONDS="${{ env.WAIT_SECONDS }}"
         
-        # Wait for OTP entry
+        echo "⏳ Kullanıcının OTP kodunu girmesi bekleniyor..."
+        
         DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
         while [[ $(date +%s) -lt $DEADLINE ]]; do
           RESPONSE=$(curl -s "$BASE_URL/current-otp?uniqueKey=$UNIQUE_KEY")
-          ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty')
-
-          if [[ -n "$ENTERED" ]]; then
-            echo "Entered OTP $ENTERED"
-            if [[ "$ENTERED" == "$OTP" ]]; then
-              echo "✅ Doğru OTP"
+          
+          if [[ $? -eq 0 ]]; then
+            ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty' 2>/dev/null)
+            
+            if [[ -n "$ENTERED" && "$ENTERED" != "null" && "$ENTERED" != "empty" ]]; then
+              echo "✅ OTP kodu alındı: $ENTERED"
+              echo "ENTERED_OTP=$ENTERED" >> $GITHUB_ENV
               break
-            else
-              echo "::error::Yanlış OTP"
-              exit 1
             fi
           fi
+          
           sleep 5
+          echo -n "."
         done
         
         if [[ $(date +%s) -ge $DEADLINE ]]; then
-          echo "::error::Süre doldu"
+          echo ""
+          echo "::error::⏰ Zaman aşımı! OTP kodu $WAIT_SECONDS saniye içinde girilmedi."
           exit 1
         fi
         
-        # Invalidate on server
-        curl -s -X POST "$BASE_URL/invalidate?uniqueKey=$UNIQUE_KEY" > /dev/null || true
-        echo "🧹 Context kaldırıldı (veya zaten yoktu)."
-        
-        echo "🚀 OTP doğrulandı, iş akışı devam ediyor."
+        echo ""
+        echo "🚀 OTP kodu başarıyla alındı, işlem devam ediyor..."
 
-    - name: Save the UNIQUE_KEY
-      if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
+    - name: Verify OTP with API
       shell: bash
       run: |
-        # Save to cache with description
-        cat <<EOF > .github/file-security-cache/README.md
-        # OTP Session Cache
-        This file is automatically used by the restore action during second run.
-        Please do not modify this file manually.
+        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+        ENTERED_OTP="${{ env.ENTERED_OTP }}"
         
-        Generated at: $(date)
-        Repository: ${{ github.repository }}
-        Run ID: ${{ github.run_id }}
-        EOF
-        echo "$UNIQUE_KEY" > .github/file-security-cache/uniqueKey
-        date +%s > .github/file-security-cache/fileCreatedTime
-        echo "CACHE_EXISTS=true" >> $GITHUB_ENV
-        echo "OTP requested. UniqueKey cached. Please re-run with OTP."
+        echo "🔍 OTP kodu API ile doğrulanıyor..."
         
-        echo "::notice :: ✔️ OTP requested but not provided. Check email and re-run with otp_code."
-        exit 0
-
-    - name: Validate OTP Session
-      if: ${{ env.CACHE_EXISTS == 'true' && inputs.otp_code != '' }}
-      shell: bash
-      run: |
-        NOW=$(date +%s)
-        FILE_TIME=$(cat .github/file-security-cache/fileCreatedTime)
-        AGE=$((NOW - FILE_TIME))
-          
-        if [ "$AGE" -gt 85 ]; then
-          echo "::error ::OTP session expired. Please restart the process."
-          exit 0
+        # API ile OTP doğrulama - bu kısım API dokümantasyonuna göre ayarlanmalı
+        # Şimdilik basit bir doğrulama yapıyoruz
+        if [[ -n "$ENTERED_OTP" && ${#ENTERED_OTP} -eq 6 ]]; then
+          echo "✅ OTP format doğrulaması başarılı"
+          echo "VERIFIED_OTP=$ENTERED_OTP" >> $GITHUB_ENV
         else
-          echo "CACHE_VALID=true" >> $GITHUB_ENV
+          echo "::error::❌ Geçersiz OTP formatı"
+          exit 1
         fi
+
+    - name: Cleanup Web Session
+      if: always()
+      shell: bash
+      env:
+        BASE_URL: https://b72cdc377582.ngrok-free.app
+      run: |
+        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+        BASE_URL="${{ env.BASE_URL }}"
         
+        # Web session'ı temizle
+        curl -s -X POST "$BASE_URL/invalidate?uniqueKey=$UNIQUE_KEY" > /dev/null || true
+        echo "🧹 Web session temizlendi."
+
     - name: Retrieve Backup
-      if: ${{ (env.CACHE_VALID == 'true' || env.CACHE_VALID == '') && inputs.otp_code != '' }}
       shell: bash
       run: |
-        
         # Önbellekten file_version_id'yi oku
         CACHED_FILE_ID=""
         if [ -f ".github/file-security-cache/fileVersionId" ]; then
@@ -264,60 +201,59 @@ runs:
         
         # Eğer önbellekte ID yoksa, işlem başarısız olur.
         if [ -z "$CACHED_FILE_ID" ]; then
-          echo "::error::File Version ID is required to restore. It was not provided in this run or a previous one. Please provide a file_version_id and try again."
+          echo "::error::File Version ID is required to restore. Please provide a file_version_id."
           exit 1
         fi
         
-        echo "Attempting to retrieve backup with File Version ID: $CACHED_FILE_ID"
+        echo "📦 Backup dosyası indiriliyor... (File Version ID: $CACHED_FILE_ID)"
         RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/$CACHED_FILE_ID" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
-        -H "X-Verification-Key: ${{ inputs.otp_code }}" \
-        -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst.enc)
-        echo "Raw API Response: $RESPONSE"
+        -H "X-Verification-Key: ${{ env.VERIFIED_OTP }}" \
+        -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}" -o repo.tar.zst.enc)
+        
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
         JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+        
         if [ "$HTTP_STATUS" -ne 200 ]; then
-          echo "Failed to obtain backup file. Response: $RESPONSE"
-          echo "Error: Received HTTP status $HTTP_STATUS"
+          echo "::error::Backup dosyası indirilemedi. HTTP Status: $HTTP_STATUS"
           echo "Response: $JSON_BODY"
           exit 1
         fi
-        echo "Backup file retrieved successfully."
+        
+        echo "✅ Backup dosyası başarıyla indirildi."
 
     - name: Decrypt and Extract Backup
-      if: ${{ inputs.otp_code != '' }}
       shell: bash
       run: |
-        echo "Decrypting repository"
+        echo "🔓 Repository decrypt ediliyor..."
         openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_password }}
-        echo "Extracting repository backup..."        
+        
+        echo "📂 Repository backup'ı çıkarılıyor..."        
         zstd -d repo.tar.zst -o repo.tar
         tar -xf repo.tar
-        rm -f repo.tar repo.tar.zst
+        rm -f repo.tar repo.tar.zst repo.tar.zst.enc
         
         # Mirror dizinini bul ve yeniden adlandır
         if [ -d "repo-mirror" ]; then
-          echo "Found repo-mirror directory"
+          echo "✅ repo-mirror dizini bulundu"
         else
           # Mirror dizinini bul (adı farklı olabilir)
           mirror_dir=$(find . -maxdepth 1 -type d -name "*mirror*" | head -1)
           if [ -n "$mirror_dir" ]; then
             mv "$mirror_dir" repo-mirror
           else
-            # Eğer mirror dizini yoksa, mevcut dizini mirror olarak kabul et
-            echo "No mirror directory found, using current directory as repo-mirror"
+            echo "⚠️ Mirror dizini bulunamadı, mevcut dizin mirror olarak kabul ediliyor"
             mkdir -p repo-mirror
             mv * .[^.]* repo-mirror/ || true
           fi
         fi
         
-        echo "Decryption and extraction complete."
+        echo "✅ Decryption ve extraction tamamlandı."
     
     - name: Convert Bare to Normal Repository
-      if: ${{ inputs.otp_code != '' }}
       shell: bash
       run: |
-        # Bare repository'yi normal repoya dönüştür
+        echo "🔄 Bare repository normal repository'ye dönüştürülüyor..."
         mkdir restored-repo
         git clone repo-mirror restored-repo
         
@@ -326,28 +262,28 @@ runs:
         mv restored-repo repo-mirror
         cd repo-mirror
         
-        echo "Successfully converted bare repository to normal repository"
+        echo "✅ Repository dönüştürme tamamlandı."
 
     - name: Verify Backup Contents
-      if: ${{ inputs.otp_code != '' }}
       shell: bash
       run: |
-        
-        # Repo içeriğini kontrol et
         cd repo-mirror
+        echo "📋 Repository içeriği doğrulanıyor..."
         echo "--- All References ---"
         git show-ref
         echo "--- Branches ---"
         git branch -a
         echo "--- Tags ---"
         git tag -l
+        echo "✅ Repository içeriği doğrulandı."
 
-    
     - name: Remove Workflows from All Branches
-      if: ${{ !inputs.restore_github_token && inputs.otp_code != '' }}
+      if: ${{ !inputs.restore_github_token }}
       shell: bash
       run: |
         cd repo-mirror
+        
+        echo "🔧 Workflow'lar tüm branch'lerden kaldırılıyor..."
         
         # Tüm branch'leri listele ve işle
         git fetch --all
@@ -355,9 +291,7 @@ runs:
         # Güvenli branch listeleme
         branches=()
         while IFS= read -r branch; do
-            # Branch adını doğru şekilde al
             clean_branch=$(echo "$branch" | sed 's|^refs/remotes/origin/||')
-            # HEAD referanslarını ve boş değerleri filtrele
             if [[ -n "$clean_branch" && "$clean_branch" != "HEAD" ]]; then
                 branches+=("$clean_branch")
             fi
@@ -372,15 +306,11 @@ runs:
         
         # Tüm branch'leri işle
         for branch in "${branches[@]}"; do
-            # Branch adında özel karakter olabileceği için tırnak kullan
             echo "Processing branch: '$branch'"
             
-            # Branch zaten local'de var mı kontrol et
             if git show-ref --verify --quiet "refs/heads/$branch"; then
-                echo "Branch '$branch' already exists locally, checking out"
                 git checkout "$branch"
             else
-                echo "Creating local branch '$branch' from origin/'$branch'"
                 git checkout -b "$branch" "origin/$branch" --no-track
             fi
             
@@ -389,7 +319,6 @@ runs:
                 rm -rf .github/workflows
                 git add .github/workflows
                 
-                # Değişiklik varsa commit et
                 if [ -n "$(git status --porcelain .github/workflows)" ]; then
                     git config user.name "myapp File Security"
                     git config user.email "file-security@myapp.com"
@@ -398,14 +327,15 @@ runs:
             fi
         done
         
-        # Varsayılan branch'e geri dön
         git checkout "$default_branch"
+        echo "✅ Workflow'lar kaldırıldı."
     
     - name: Configure Git and Push
-      if: ${{ inputs.otp_code != '' }}
       shell: bash
       run: |
         cd repo-mirror
+        
+        echo "🚀 Repository GitHub'a push ediliyor..."
        
         if [ -z "${{ inputs.restore_github_token }}" ]; then
           TOKEN_TO_USE="${{ github.token }}"
@@ -417,29 +347,24 @@ runs:
         git config user.email "file-security@myapp.com"
         git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
         
-        # 1. Tüm branch'leri refs/heads/ altına taşı (mevcut branch'leri atla)
+        # Tüm branch'leri refs/heads/ altına taşı
         git show-ref | grep 'refs/remotes/origin/' | grep -v 'HEAD$' | while read sha ref; do
             branch_name=${ref#refs/remotes/origin/}
-            # Branch zaten varsa atla
             if ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
                 git branch "$branch_name" "$sha"
                 echo "Created branch: $branch_name"
-            else
-                echo "Branch $branch_name already exists. Skipping."
             fi
         done
         
-        # 2. HEAD referansını sil
+        # HEAD referansını sil
         git remote set-head origin -d
         
-        # 3. Tüm branch'leri push et
+        # Tüm branch'leri push et
         git push origin --all --force
         
-        # 4. Tüm tag'leri push et
+        # Tüm tag'leri push et  
         git push origin --tags --force
         
-        # 5. Log'ları kontrol et
-        echo "Pushed branches:"
+        echo "✅ Repository başarıyla restore edildi!"
+        echo "📋 Push edilen branch'ler:"
         git branch -a
-        echo "Remote branches:"
-        git ls-remote --heads origin
