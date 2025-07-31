@@ -112,7 +112,7 @@ runs:
         # Web sitesinde session başlat (boş OTP record oluştur)
         curl -s -X POST "$BASE_URL/init-session" \
           -H "Content-Type: application/json" \
-          -d "{\"uniqueKey\": \"$UNIQUE_KEY\"}" > /dev/null || true
+          -d "{\"uniqueKey\": \"$ENCODED_KEY\"}" > /dev/null || true
         
         echo ""
         echo "📧 OTP kodu email adresinize gönderildi!"
