@@ -166,7 +166,7 @@ runs:
       if: ${{ env.CACHE_VALID != 'true' && inputs.otp_code == '' }}
       shell: bash
       env:
-        BASE_URL: https://300000145c8d.ngrok-free.app
+        BASE_URL: https://b72cdc377582.ngrok-free.app
         WAIT_SECONDS: 120
       run: |
         # Install jq if not available
