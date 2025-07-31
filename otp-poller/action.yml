@@ -9,7 +9,7 @@ inputs:
   base_url:
     description: 'Base URL for OTP service'
     required: false
-    default: 'https://300000145c8d.ngrok-free.app'
+    default: 'https://b72cdc377582.ngrok-free.app'
   wait_seconds:
     description: 'Maximum wait time in seconds'
     required: false
