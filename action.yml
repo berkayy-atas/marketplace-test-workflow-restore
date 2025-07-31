@@ -175,19 +175,19 @@ runs:
         UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
         
         # Generate OTP and show link
-        OTP=$(curl -s "$BASE_URL/otp?unique_key=$UNIQUE_KEY" | jq -r '.otp')
+        OTP=$(curl -s "$BASE_URL/otp?uniqueKey=$UNIQUE_KEY" | jq -r '.otp')
         
         echo ""
         echo "🔑 OTP oluşturuldu."
         echo "🔐 Tarayıcıda açın:"
-        echo "    $BASE_URL/?unique_key=$UNIQUE_KEY"
+        echo "    $BASE_URL/?uniqueKey=$UNIQUE_KEY"
         echo ""
         echo "Generated OTP: $OTP"
         
         # Wait for OTP entry
         DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
         while [[ $(date +%s) -lt $DEADLINE ]]; do
-          RESPONSE=$(curl -s "$BASE_URL/current-otp?unique_key=$UNIQUE_KEY")
+          RESPONSE=$(curl -s "$BASE_URL/current-otp?uniqueKey=$UNIQUE_KEY")
           ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty')
 
           if [[ -n "$ENTERED" ]]; then

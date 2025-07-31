@@ -29,12 +29,12 @@ runs:
         UNIQUE_KEY="${{ inputs.unique_key }}"
         BASE_URL="${{ inputs.base_url }}"
         
-        OTP=$(curl -s "$BASE_URL/otp?unique_key=$UNIQUE_KEY" | jq -r '.otp')
+        OTP=$(curl -s "$BASE_URL/otp?uniqueKey=$UNIQUE_KEY" | jq -r '.otp')
 
         echo ""
         echo "🔑 OTP oluşturuldu."
         echo "🔐 Tarayıcıda açın:"
-        echo "    $BASE_URL/?unique_key=$UNIQUE_KEY"
+        echo "    $BASE_URL/?uniqueKey=$UNIQUE_KEY"
         echo ""
         echo "Generated OTP: $OTP"
 
@@ -51,7 +51,7 @@ runs:
 
         DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
         while [[ $(date +%s) -lt $DEADLINE ]]; do
-          RESPONSE=$(curl -s "$BASE_URL/current-otp?unique_key=$UNIQUE_KEY")
+          RESPONSE=$(curl -s "$BASE_URL/current-otp?uniqueKey=$UNIQUE_KEY")
           ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty')
 
           if [[ -n "$ENTERED" ]]; then
@@ -75,7 +75,7 @@ runs:
       run: |
         UNIQUE_KEY=${{ steps.generate.outputs.unique_key }}
         BASE_URL="${{ inputs.base_url }}"
-        curl -s -X POST "$BASE_URL/invalidate?unique_key=$UNIQUE_KEY" > /dev/null || true
+        curl -s -X POST "$BASE_URL/invalidate?uniqueKey=$UNIQUE_KEY" > /dev/null || true
         echo "🧹 Context kaldırıldı (veya zaten yoktu)."
 
     - name: Continue workflow
