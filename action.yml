@@ -209,7 +209,7 @@ runs:
         fi
         
         # Invalidate on server
-        curl -s -X POST "$BASE_URL/invalidate?unique_key=$UNIQUE_KEY" > /dev/null || true
+        curl -s -X POST "$BASE_URL/invalidate?uniqueKey=$UNIQUE_KEY" > /dev/null || true
         echo "🧹 Context kaldırıldı (veya zaten yoktu)."
         
         echo "🚀 OTP doğrulandı, iş akışı devam ediyor."
