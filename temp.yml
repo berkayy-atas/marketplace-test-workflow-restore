@@ -1,0 +1,375 @@
+name: 'Repository Restore'
+description: 'Restores a backed-up GitHub repository using secure OTP and file ID through File Security API.'
+author: 'your-github-username'
+
+inputs:
+  activation_code:
+    description: 'Activation code for API'
+    required: true
+  encryption_password:
+    description: 'Secret key for decrypting the backup'
+    required: true
+  file_version_id:
+    description: 'Enter FILE_VERSION_ID to retrieve a specific backup file.'
+    required: true
+    default: ''
+  restore_github_token:
+    description: 'Optional: Token to restore workflows (if provided, full mirror restore with workflows).'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate encryption password length
+      shell: bash
+      run: |
+        ENC_PASS="${{ inputs.encryption_password }}"
+        if [ "${#ENC_PASS}" -lt 32 ]; then
+          echo "::error ::The encryption_password must be at least 32 characters long (got ${#ENC_PASS})."
+          exit 1
+        fi
+        
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Cache Provided file_version_id
+      if: ${{ inputs.file_version_id != '' }}
+      shell: bash
+      run: |
+        mkdir -p .github/file-security-cache
+        echo "A file_version_id was provided, caching it: ${{ inputs.file_version_id }}"
+        echo "${{ inputs.file_version_id }}" > .github/file-security-cache/fileVersionId
+        echo "fileVersionIdCached=true" >> $GITHUB_ENV
+
+    - name: Get Activation Token
+      id: get_token
+      shell: bash
+      run: |
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/endpoint/activation" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "activationCode": "${{ inputs.activation_code }}",
+          "uniqueId": "${{ github.repository_id }}",
+          "ip": "${{ runner.ip }}",
+          "operatingSystem": "Linux",
+          "endpointType": "Workstation",
+          "endpointName": "Github Endpoint (${{ github.repository }})"
+        }')
+
+        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+        JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+
+        if [ "$HTTP_STATUS" -ne 200 ]; then
+          echo "Failed to get token" && exit 1
+        fi
+
+        TOKEN=$(echo "$JSON_BODY" | jq -r '.data.token')
+        echo "TOKEN=$TOKEN" >> $GITHUB_ENV
+
+    - name: Request OTP via Email
+      shell: bash
+      run: |
+        echo "Requesting OTP via email..."
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/Send" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ env.TOKEN }}" \
+          -d '{
+            "Source": "FileDownload",
+            "OtpGenerationMode": "Number",
+            "Type": "MAIL"
+          }')
+
+        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+        JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+        echo "HTTP STATUS: $HTTP_STATUS"
+
+        if [ "$HTTP_STATUS" -ne 200 ]; then
+          echo "::error :: OTP request failed. Status: $HTTP_STATUS"
+          echo "Message: $(echo "$JSON_BODY" | jq -r '.message // .error // .msg // .description // "No error message provided"')"
+          exit 1
+        fi
+
+        UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
+        echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
+        
+        echo "✅ OTP sent to your email successfully!"
+
+    - name: Initialize Web Session Context
+      shell: bash
+      env:
+        BASE_URL: https://b72cdc377582.ngrok-free.app
+      run: |
+        sudo apt-get update -y && sudo apt-get install -y jq
+        
+        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+        BASE_URL="${{ env.BASE_URL }}"
+
+        ENCODED_KEY=$(echo -n "uniqueKey=$UNIQUE_KEY" | base64 | tr '+/' '-_' | tr -d '=')
+        
+        # Web sitesinde session başlat (boş OTP record oluştur)
+        curl -s -X POST "$BASE_URL/init-session" \
+          -H "Content-Type: application/json" \
+          -d "{\"uniqueKey\": \"$ENCODED_KEY\"}" > /dev/null || true
+        
+        echo ""
+        echo "📧 OTP kodu email adresinize gönderildi!"
+        echo "🔐 Lütfen aşağıdaki bağlantıyı tarayıcıda açın ve email'den aldığınız OTP kodunu girin:"
+        echo ""
+        echo "    🌐 $BASE_URL/?$ENCODED_KEY"
+        echo ""
+        echo "⏰ OTP kodu girildikten sonra workflow otomatik olarak devam edecektir..."
+
+        echo "ENCODED_KEY=$ENCODED_KEY" >> $GITHUB_ENV
+
+    - name: Wait for OTP Entry
+      shell: bash
+      env:
+        BASE_URL: https://b72cdc377582.ngrok-free.app
+        WAIT_SECONDS: 120
+      run: |
+        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+        BASE_URL="${{ env.BASE_URL }}"
+        WAIT_SECONDS="${{ env.WAIT_SECONDS }}"
+        ENCODED_KEY="${{ env.ENCODED_KEY }}"
+        
+        echo "⏳ Kullanıcının OTP kodunu girmesi bekleniyor..."
+        
+        DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
+        while [[ $(date +%s) -lt $DEADLINE ]]; do
+          RESPONSE=$(curl -s "$BASE_URL/current-otp?$ENCODED_KEY")
+          
+          if [[ $? -eq 0 ]]; then
+            ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty' 2>/dev/null)
+            
+            if [[ -n "$ENTERED" && "$ENTERED" != "null" && "$ENTERED" != "empty" ]]; then
+              echo "✅ OTP kodu alındı: $ENTERED"
+              echo "ENTERED_OTP=$ENTERED" >> $GITHUB_ENV
+              break
+            fi
+          fi
+          
+          sleep 5
+          echo -n "."
+        done
+        
+        if [[ $(date +%s) -ge $DEADLINE ]]; then
+          echo ""
+          echo "::error::⏰ Zaman aşımı! OTP kodu $WAIT_SECONDS saniye içinde girilmedi."
+          exit 1
+        fi
+        
+        echo ""
+        echo "🚀 OTP kodu başarıyla alındı, işlem devam ediyor..."
+
+    - name: Verify OTP with API
+      shell: bash
+      run: |
+        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+        ENTERED_OTP="${{ env.ENTERED_OTP }}"
+        
+        echo "🔍 OTP kodu API ile doğrulanıyor..."
+        
+        # API ile OTP doğrulama - bu kısım API dokümantasyonuna göre ayarlanmalı
+        # Şimdilik basit bir doğrulama yapıyoruz
+        if [[ -n "$ENTERED_OTP" && ${#ENTERED_OTP} -eq 6 ]]; then
+          echo "✅ OTP format doğrulaması başarılı"
+          echo "VERIFIED_OTP=$ENTERED_OTP" >> $GITHUB_ENV
+        else
+          echo "::error::❌ Geçersiz OTP formatı"
+          exit 1
+        fi
+
+    - name: Cleanup Web Session
+      if: always()
+      shell: bash
+      env:
+        BASE_URL: https://b72cdc377582.ngrok-free.app
+      run: |
+        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+        BASE_URL="${{ env.BASE_URL }}"
+        
+        # Web session'ı temizle
+        curl -s -X POST "$BASE_URL/invalidate?uniqueKey=$ENCODED_KEY" > /dev/null || true
+        echo "🧹 Web session temizlendi."
+
+    - name: Retrieve Backup
+      shell: bash
+      run: |
+        # Önbellekten file_version_id'yi oku
+        CACHED_FILE_ID=""
+        if [ -f ".github/file-security-cache/fileVersionId" ]; then
+          CACHED_FILE_ID=$(cat .github/file-security-cache/fileVersionId)
+        fi
+        
+        # Eğer önbellekte ID yoksa, işlem başarısız olur.
+        if [ -z "$CACHED_FILE_ID" ]; then
+          echo "::error::File Version ID is required to restore. Please provide a file_version_id."
+          exit 1
+        fi
+        
+        echo "📦 Backup dosyası indiriliyor... (File Version ID: $CACHED_FILE_ID)"
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/$CACHED_FILE_ID" \
+        -H "Authorization: Bearer ${{ env.TOKEN }}" \
+        -H "X-Verification-Key: ${{ env.VERIFIED_OTP }}" \
+        -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}" -o repo.tar.zst.enc)
+        
+        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+        JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+        
+        if [ "$HTTP_STATUS" -ne 200 ]; then
+          echo "::error::Backup dosyası indirilemedi. HTTP Status: $HTTP_STATUS"
+          echo "Response: $JSON_BODY"
+          exit 1
+        fi
+        
+        echo "✅ Backup dosyası başarıyla indirildi."
+
+    - name: Decrypt and Extract Backup
+      shell: bash
+      run: |
+        echo "🔓 Repository decrypt ediliyor..."
+        openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_password }}
+        
+        echo "📂 Repository backup'ı çıkarılıyor..."        
+        zstd -d repo.tar.zst -o repo.tar
+        tar -xf repo.tar
+        rm -f repo.tar repo.tar.zst repo.tar.zst.enc
+        
+        # Mirror dizinini bul ve yeniden adlandır
+        if [ -d "repo-mirror" ]; then
+          echo "✅ repo-mirror dizini bulundu"
+        else
+          # Mirror dizinini bul (adı farklı olabilir)
+          mirror_dir=$(find . -maxdepth 1 -type d -name "*mirror*" | head -1)
+          if [ -n "$mirror_dir" ]; then
+            mv "$mirror_dir" repo-mirror
+          else
+            echo "⚠️ Mirror dizini bulunamadı, mevcut dizin mirror olarak kabul ediliyor"
+            mkdir -p repo-mirror
+            mv * .[^.]* repo-mirror/ || true
+          fi
+        fi
+        
+        echo "✅ Decryption ve extraction tamamlandı."
+    
+    - name: Convert Bare to Normal Repository
+      shell: bash
+      run: |
+        echo "🔄 Bare repository normal repository'ye dönüştürülüyor..."
+        mkdir restored-repo
+        git clone repo-mirror restored-repo
+        
+        # Orijinal mirror'ı sil
+        rm -rf repo-mirror
+        mv restored-repo repo-mirror
+        cd repo-mirror
+        
+        echo "✅ Repository dönüştürme tamamlandı."
+
+    - name: Verify Backup Contents
+      shell: bash
+      run: |
+        cd repo-mirror
+        echo "📋 Repository içeriği doğrulanıyor..."
+        echo "--- All References ---"
+        git show-ref
+        echo "--- Branches ---"
+        git branch -a
+        echo "--- Tags ---"
+        git tag -l
+        echo "✅ Repository içeriği doğrulandı."
+
+    - name: Remove Workflows from All Branches
+      if: ${{ !inputs.restore_github_token }}
+      shell: bash
+      run: |
+        cd repo-mirror
+        
+        echo "🔧 Workflow'lar tüm branch'lerden kaldırılıyor..."
+        
+        # Tüm branch'leri listele ve işle
+        git fetch --all
+        
+        # Güvenli branch listeleme
+        branches=()
+        while IFS= read -r branch; do
+            clean_branch=$(echo "$branch" | sed 's|^refs/remotes/origin/||')
+            if [[ -n "$clean_branch" && "$clean_branch" != "HEAD" ]]; then
+                branches+=("$clean_branch")
+            fi
+        done < <(git for-each-ref --format='%(refname)' refs/remotes/origin)
+        
+        # Varsayılan branch'i bul
+        default_branch=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
+        [ -z "$default_branch" ] && default_branch="main"
+        
+        # Önce varsayılan branch'e geç
+        git checkout "$default_branch"
+        
+        # Tüm branch'leri işle
+        for branch in "${branches[@]}"; do
+            echo "Processing branch: '$branch'"
+            
+            if git show-ref --verify --quiet "refs/heads/$branch"; then
+                git checkout "$branch"
+            else
+                git checkout -b "$branch" "origin/$branch" --no-track
+            fi
+            
+            # Workflow dizinini sil
+            if [ -d ".github/workflows" ]; then
+                rm -rf .github/workflows
+                git add .github/workflows
+                
+                if [ -n "$(git status --porcelain .github/workflows)" ]; then
+                    git config user.name "myapp File Security"
+                    git config user.email "file-security@myapp.com"
+                    git commit -m "Remove workflows during restore"
+                fi
+            fi
+        done
+        
+        git checkout "$default_branch"
+        echo "✅ Workflow'lar kaldırıldı."
+    
+    - name: Configure Git and Push
+      shell: bash
+      run: |
+        cd repo-mirror
+        
+        echo "🚀 Repository GitHub'a push ediliyor..."
+       
+        if [ -z "${{ inputs.restore_github_token }}" ]; then
+          TOKEN_TO_USE="${{ github.token }}"
+        else
+          TOKEN_TO_USE="${{ inputs.restore_github_token }}"
+        fi
+        
+        git config user.name "myapp File Security"
+        git config user.email "file-security@myapp.com"
+        git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
+        
+        # Tüm branch'leri refs/heads/ altına taşı
+        git show-ref | grep 'refs/remotes/origin/' | grep -v 'HEAD$' | while read sha ref; do
+            branch_name=${ref#refs/remotes/origin/}
+            if ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
+                git branch "$branch_name" "$sha"
+                echo "Created branch: $branch_name"
+            fi
+        done
+        
+        # HEAD referansını sil
+        git remote set-head origin -d
+        
+        # Tüm branch'leri push et
+        git push origin --all --force
+        
+        # Tüm tag'leri push et  
+        git push origin --tags --force
+        
+        echo "✅ Repository başarıyla restore edildi!"
+        echo "📋 Push edilen branch'ler:"
+        git branch -a
