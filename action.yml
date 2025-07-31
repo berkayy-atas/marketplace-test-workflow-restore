@@ -108,7 +108,7 @@ runs:
         BASE_URL="${{ env.BASE_URL }}"
 
         ENCODED_KEY=$(echo -n "$UNIQUE_KEY" | base64 | tr '+/' '-_' | tr -d '=')
-        ENCODED_KEY >> GITHUB_ENV
+        echo "ENCODED_KEY" >> GITHUB_ENV
         
         # Web sitesinde session başlat (boş OTP record oluştur)
         curl -s -X POST "$BASE_URL/init-session" \
