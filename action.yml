@@ -279,5 +279,5 @@ runs:
         git config user.email "file-security@myapp.com"
         git remote add mirror https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
         
-        git push --mirror backup
+        git push --mirror mirror
         
