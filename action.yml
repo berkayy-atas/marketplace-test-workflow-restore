@@ -69,100 +69,100 @@ runs:
         TOKEN=$(echo "$JSON_BODY" | jq -r '.data.token')
         echo "TOKEN=$TOKEN" >> $GITHUB_ENV
 
-    - name: Request OTP via Email
-      shell: bash
-      run: |
-        echo "Requesting OTP via email..."
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/Send" \
-          -H "Content-Type: application/json" \
-          -H "Authorization: Bearer ${{ env.TOKEN }}" \
-          -d '{
-            "Source": "FileDownload",
-            "OtpGenerationMode": "Number",
-            "Type": "MAIL"
-          }')
+      - name: Request OTP via Email
+        shell: bash
+        run: |
+          echo "Requesting OTP via email..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/Send" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ env.TOKEN }}" \
+            -d '{
+              "Source": "FileDownload",
+              "OtpGenerationMode": "Number",
+              "Type": "MAIL"
+            }')
 
-        HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
-        JSON_BODY=$(echo "$RESPONSE" | head -n -1)
-        echo "HTTP STATUS: $HTTP_STATUS"
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+          JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "HTTP STATUS: $HTTP_STATUS"
 
-        if [ "$HTTP_STATUS" -ne 200 ]; then
-          echo "::error :: OTP request failed. Status: $HTTP_STATUS"
-          echo "Message: $(echo "$JSON_BODY" | jq -r '.message // .error // .msg // .description // "No error message provided"')"
-          exit 1
-        fi
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error :: OTP request failed. Status: $HTTP_STATUS"
+            echo "Message: $(echo "$JSON_BODY" | jq -r '.message // .error // .msg // .description // "No error message provided"')"
+            exit 1
+          fi
 
-        UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
-        echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
-        
-        echo "✅ OTP sent to your email successfully!"
-
-    - name: Initialize Web Session Context
-      shell: bash
-      env:
-        BASE_URL: https://b72cdc377582.ngrok-free.app
-      run: |
-        sudo apt-get update -y && sudo apt-get install -y jq
-        
-        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
-        BASE_URL="${{ env.BASE_URL }}"
-
-        ENCODED_KEY=$(echo -n "uniqueKey=$UNIQUE_KEY" | base64 | tr '+/' '-_' | tr -d '=')
-        
-        # Web sitesinde session başlat (boş OTP record oluştur)
-        curl -s -X POST "$BASE_URL/init-session" \
-          -H "Content-Type: application/json" \
-          -d "{\"uniqueKey\": \"$ENCODED_KEY\"}" > /dev/null || true
-        
-        echo ""
-        echo "📧 OTP kodu email adresinize gönderildi!"
-        echo "🔐 Lütfen aşağıdaki bağlantıyı tarayıcıda açın ve email'den aldığınız OTP kodunu girin:"
-        echo ""
-        echo "    🌐 $BASE_URL/?$ENCODED_KEY"
-        echo ""
-        echo "⏰ OTP kodu girildikten sonra workflow otomatik olarak devam edecektir..."
-
-        echo "ENCODED_KEY=$ENCODED_KEY" >> $GITHUB_ENV
-
-    - name: Wait for OTP Entry
-      shell: bash
-      env:
-        BASE_URL: https://b72cdc377582.ngrok-free.app
-        WAIT_SECONDS: 120
-      run: |
-        UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
-        BASE_URL="${{ env.BASE_URL }}"
-        WAIT_SECONDS="${{ env.WAIT_SECONDS }}"
-        ENCODED_KEY="${{ env.ENCODED_KEY }}"
-        
-        echo "⏳ Kullanıcının OTP kodunu girmesi bekleniyor..."
-        
-        DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
-        while [[ $(date +%s) -lt $DEADLINE ]]; do
-          RESPONSE=$(curl -s "$BASE_URL/current-otp?$ENCODED_KEY")
+          UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
+          echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
           
-          if [[ $? -eq 0 ]]; then
-            ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty' 2>/dev/null)
+          echo "✅ OTP sent to your email successfully!"
+
+      - name: Initialize Web Session Context
+        shell: bash
+        env:
+          BASE_URL: https://b72cdc377582.ngrok-free.app
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y jq
+          
+          UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+          BASE_URL="${{ env.BASE_URL }}"
+
+          ENCODED_KEY=$(echo -n "uniqueKey=$UNIQUE_KEY" | base64 | tr '+/' '-_' | tr -d '=')
+          
+          # Web sitesinde session başlat (boş OTP record oluştur)
+          curl -s -X POST "$BASE_URL/init-session" \
+            -H "Content-Type: application/json" \
+            -d "{\"uniqueKey\": \"$ENCODED_KEY\"}" > /dev/null || true
+          
+          echo ""
+          echo "📧 OTP kodu email adresinize gönderildi!"
+          echo "🔐 Lütfen aşağıdaki bağlantıyı tarayıcıda açın ve email'den aldığınız OTP kodunu girin:"
+          echo ""
+          echo "    🌐 $BASE_URL/?$ENCODED_KEY"
+          echo ""
+          echo "⏰ OTP kodu girildikten sonra workflow otomatik olarak devam edecektir..."
+
+          echo "ENCODED_KEY=$ENCODED_KEY" >> $GITHUB_ENV
+
+      - name: Wait for OTP Entry
+        shell: bash
+        env:
+          BASE_URL: https://b72cdc377582.ngrok-free.app
+          WAIT_SECONDS: 120
+        run: |
+          UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
+          BASE_URL="${{ env.BASE_URL }}"
+          WAIT_SECONDS="${{ env.WAIT_SECONDS }}"
+          ENCODED_KEY="${{ env.ENCODED_KEY }}"
+          
+          echo "⏳ Kullanıcının OTP kodunu girmesi bekleniyor..."
+          
+          DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
+          while [[ $(date +%s) -lt $DEADLINE ]]; do
+            RESPONSE=$(curl -s "$BASE_URL/current-otp?$ENCODED_KEY")
             
-            if [[ -n "$ENTERED" && "$ENTERED" != "null" && "$ENTERED" != "empty" ]]; then
-              echo "✅ OTP kodu alındı: $ENTERED"
-              echo "ENTERED_OTP=$ENTERED" >> $GITHUB_ENV
-              break
+            if [[ $? -eq 0 ]]; then
+              ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty' 2>/dev/null)
+              
+              if [[ -n "$ENTERED" && "$ENTERED" != "null" && "$ENTERED" != "empty" ]]; then
+                echo "✅ OTP kodu alındı: $ENTERED"
+                echo "ENTERED_OTP=$ENTERED" >> $GITHUB_ENV
+                break
+              fi
             fi
+            
+            sleep 5
+            echo -n "."
+          done
+          
+          if [[ $(date +%s) -ge $DEADLINE ]]; then
+            echo ""
+            echo "::error::⏰ Zaman aşımı! OTP kodu $WAIT_SECONDS saniye içinde girilmedi."
+            exit 1
           fi
           
-          sleep 5
-          echo -n "."
-        done
-        
-        if [[ $(date +%s) -ge $DEADLINE ]]; then
           echo ""
-          echo "::error::⏰ Zaman aşımı! OTP kodu $WAIT_SECONDS saniye içinde girilmedi."
-          exit 1
-        fi
-        
-        echo ""
-        echo "🚀 OTP kodu başarıyla alındı, işlem devam ediyor..."
+          echo "🚀 OTP kodu başarıyla alındı, işlem devam ediyor..."
 
     - name: Verify OTP with API
       shell: bash
