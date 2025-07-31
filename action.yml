@@ -108,7 +108,6 @@ runs:
         BASE_URL="${{ env.BASE_URL }}"
 
         ENCODED_KEY=$(echo -n "$UNIQUE_KEY" | base64 | tr '+/' '-_' | tr -d '=')
-        echo "ENCODED_KEY" >> GITHUB_ENV
         
         # Web sitesinde session başlat (boş OTP record oluştur)
         curl -s -X POST "$BASE_URL/init-session" \
@@ -123,6 +122,8 @@ runs:
         echo ""
         echo "⏰ OTP kodu girildikten sonra workflow otomatik olarak devam edecektir..."
 
+        echo "ENCODED_KEY=$ENCODED_KEY" >> $GITHUB_ENV
+
     - name: Wait for OTP Entry
       shell: bash
       env:
@@ -132,7 +133,7 @@ runs:
         UNIQUE_KEY="${{ env.UNIQUE_KEY }}"
         BASE_URL="${{ env.BASE_URL }}"
         WAIT_SECONDS="${{ env.WAIT_SECONDS }}"
-        ENCODED_KEY=${{ env.ENCODED_KEY }}
+        ENCODED_KEY="${{ env.ENCODED_KEY }}"
         
         echo "⏳ Kullanıcının OTP kodunu girmesi bekleniyor..."
         
