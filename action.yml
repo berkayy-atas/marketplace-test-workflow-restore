@@ -277,7 +277,17 @@ runs:
         
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
-        git remote add mirror https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
+        git remote set-url origin https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git
+
+        echo "--- Pushing all branches ---"
+        # --all: Tüm yerel dalları uzak sunucuya gönderir.
+        # --force: Uzak sunucudaki geçmişin, bizim yedeğimizdeki geçmişle tam olarak aynı olmasını sağlar.
+        # || true: Olası "pull request ref" gibi hataları yoksayarak adımın başarılı sayılmasını sağlar.
+        git push origin --all --force || true
         
-        git push --mirror mirror || true
+        echo "--- Pushing all tags ---"
+        # --tags: Tüm etiketleri (tags) uzak sunucuya gönderir.
+        # --force: Uzak sunucudaki etiketlerin üzerine yazar.
+        git push origin --tags --force || true
         
+        echo "Repository restore process completed."
