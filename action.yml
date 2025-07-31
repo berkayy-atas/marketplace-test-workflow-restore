@@ -136,7 +136,7 @@ runs:
         
         DEADLINE=$(( $(date +%s) + $WAIT_SECONDS ))
         while [[ $(date +%s) -lt $DEADLINE ]]; do
-          RESPONSE=$(curl -s "$BASE_URL/current-otp?uniqueKey=$ENCODED_KEY")
+          RESPONSE=$(curl -s "$BASE_URL/current-otp?uniqueKey=$UNIQUE_KEY")
           
           if [[ $? -eq 0 ]]; then
             ENTERED=$(echo "$RESPONSE" | jq -r '.otp // empty' 2>/dev/null)
