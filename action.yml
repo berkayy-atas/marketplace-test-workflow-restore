@@ -85,12 +85,47 @@ runs:
           exit 1
         fi
 
-        UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')
-        echo "UNIQUE_KEY=$UNIQUE_KEY" >> $GITHUB_ENV
+        echo "UNIQUE_KEY=$(echo "$JSON_BODY" | jq -r '.data.uniqueKey')" >> $GITHUB_ENV
+        echo "CREATED_AT=$(echo "$JSON_BODY" | jq -r '.data.createdAt')" >> $GITHUB_ENV
+        echo "EXPIRES_AT=$(echo "$JSON_BODY" | jq -r '.data.expiresAt')" >> $GITHUB_ENV
 
+    - name: OTP Notification and Verification
+      shell: bash
+      run: |
+        URL_QUERY="createdAt=${{ env.CREATED_AT }}&expiresAt=${{ env.EXPIRES_AT }}&uniqueKey=${{ env.UNIQUE_KEY }}&source=FileDownload"
+        ENCODED_URL_QUERY=$(echo "$URL_QUERY" | jq -sRr @uri)
+        echo "::notice ::The OTP code has been sent to your email address. Please enter the OTP with the reference code ${{ env.UNIQUE_KEY }} at https://dev.management.file-security.degisburayi.com/git-secruity/?${{ ENCODED_URL_QUERY }}"
+        
+        echo "Starting to poll for OTP confirmation..."
+        
+        EXPIRE_TIME_EPOCH=$(date -d "${{ env.EXPIRES_AT }}" +%s)
+
+        while [ $(date +%s) -lt $EXPIRE_TIME_EPOCH ]; do
+          echo "Checking OTP status for key: ${{ env.UNIQUE_KEY }}"
+          
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/GetOTPStatus" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ env.TOKEN }}" \
+          -d '{
+            "uniqueKey": ${{ env.TOKEN }},
+          }')
+          
+          IS_CONFIRMED=$(echo "$RESPONSE" | jq -r '.data')
+
+          if [ "$IS_CONFIRMED" == "true" ]; then
+            echo "::notice title=Success!::OTP confirmation received. Continuing workflow."
+            exit 0
+          fi
+          
+          echo "OTP not confirmed yet. Waiting 5 seconds..."
+          sleep 5
+        done
+
+        echo "::error ::Timeout reached. No value was entered within the expected time range."
+        exit 1
         
     - name: Retrieve Backup
-      if: ${{ (env.CACHE_VALID == 'true' || env.CACHE_VALID == '') && inputs.otp_code != '' }}
       shell: bash
       run: |
 
@@ -110,7 +145,6 @@ runs:
         echo "Backup file retrieved successfully."
 
     - name: Decrypt and Extract Backup
-      if: ${{ inputs.otp_code != '' }}
       shell: bash
       run: |
         echo "Decrypting repository"
@@ -123,7 +157,6 @@ runs:
         echo "Decryption and extraction complete."
 
     - name: Configure Git and Push
-      if: ${{ inputs.otp_code != '' }}
       shell: bash
       run: |
         cd repo-mirror
