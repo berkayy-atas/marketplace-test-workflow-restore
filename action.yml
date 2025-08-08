@@ -103,26 +103,27 @@ runs:
         while [ $(date +%s) -lt $EXPIRE_TIME_EPOCH ]; do
           echo "Checking OTP status for key: ${{ env.UNIQUE_KEY }}"
           
-          
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/GetOTPStatus" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ env.TOKEN }}" \
-          -d '{
-            "uniqueKey": ${{ env.TOKEN }},
-          }')
+          -d '{ "uniqueKey": "${{ env.UNIQUE_KEY }}" }')
           
           HTTP_STATUS=$(echo "$RAW_RESPONSE" | tail -n1)
-        JSON_BODY=$(echo "$RAW_RESPONSE" | head -n -1)
+          JSON_BODY=$(echo "$RAW_RESPONSE" | head -n -1)
 
-        if [ "$HTTP_STATUS" -eq 200 ]; then
-          IS_CONFIRMED=$(echo "$JSON_BODY" | jq -r '.data')
-          if [ "$IS_CONFIRMED" == "true" ]; then
-            echo "::notice title=Success!::OTP confirmation received. Continuing workflow."
-            exit 0 # Success!
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            IS_CONFIRMED=$(echo "$JSON_BODY" | jq -r '.data')
+            if [ "$IS_CONFIRMED" == "true" ]; then
+              echo "::notice title=Success!::OTP confirmation received. Continuing workflow."
+              exit 0 # Success!
+            fi
+          else
+            echo "::warning::Polling request failed with status $HTTP_STATUS. Body: $JSON_BODY"
           fi
-        else
-          echo "::warning::Polling request failed with status $HTTP_STATUS. Body: $JSON_BODY"
-        fi
+          
+          echo "OTP not confirmed yet. Waiting 5 seconds..."
+          sleep 5
+        done
 
         echo "::error ::Timeout reached. No value was entered within the expected time range."
         exit 1
