@@ -113,6 +113,7 @@ runs:
 
           if [ "$HTTP_STATUS" -eq 200 ]; then
             IS_CONFIRMED=$(echo "$JSON_BODY" | jq -r '.data' | tr -d '\r\n')
+            echo "$IS_CONFIRMED"
             if [ "$IS_CONFIRMED" == "true" ]; then
               echo "::notice title=Success!::OTP confirmation received. Continuing workflow."
               exit 0 # Success!
