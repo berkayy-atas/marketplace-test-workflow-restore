@@ -157,7 +157,7 @@ runs:
         openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_password }}
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
-        tar -xf repo.tar\
+        tar -xf repo.tar
         rm -f repo.tar repo.tar.zst
         
         echo "Decryption and extraction complete."
