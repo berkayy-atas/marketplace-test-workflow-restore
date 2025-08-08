@@ -104,6 +104,7 @@ runs:
           echo "Checking OTP status for key: ${{ env.UNIQUE_KEY }}"
           
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev.api.file-security.icredible.com/OTP/GetOTPStatus" \
+          -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ env.TOKEN }}" \
           -d '{ "uniqueKey": "${{ env.UNIQUE_KEY }}" }')
           
