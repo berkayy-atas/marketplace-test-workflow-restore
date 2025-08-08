@@ -94,7 +94,7 @@ runs:
       run: |
         URL_QUERY="createdAt=${{ env.CREATED_AT }}&expiresAt=${{ env.EXPIRES_AT }}&uniqueKey=${{ env.UNIQUE_KEY }}&source=FileDownload"
         ENCODED_URL_QUERY=$(echo "$URL_QUERY" | jq -sRr @uri)
-        echo "::notice ::The OTP code has been sent to your email address. Please enter the OTP with the reference code ${{ env.UNIQUE_KEY }} at https://dev.management.file-security.degisburayi.com/git-secruity/?${{ ENCODED_URL_QUERY }}"
+        echo "::notice ::The OTP code has been sent to your email address. Please enter the OTP with the reference code ${{ env.UNIQUE_KEY }} at https://dev.management.file-security.degisburayi.com/git-secruity/?$ENCODED_URL_QUERY"
         
         echo "Starting to poll for OTP confirmation..."
         
@@ -129,9 +129,9 @@ runs:
       shell: bash
       run: |
 
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/$CACHED_FILE_ID" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.file_version_id }}" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
-        -H "X-Verification-Key: ${{ inputs.otp_code }}" \
+        -H "X-Verification-Key: 1" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst.enc)
         echo "Raw API Response: $RESPONSE"
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
