@@ -1,6 +1,5 @@
 name: 'Repository Restore'
-description: 'Restores a backed-up GitHub repository using secure OTP and file ID through File Security API.'
-author: 'your-github-username'
+description: 'Restores a backed-up GitHub repository using secure OTP and file version ID through File Security web UI.'
 
 inputs:
   activation_code:
@@ -89,13 +88,16 @@ runs:
         echo "CREATED_AT=$(echo "$JSON_BODY" | jq -r '.data.createdAt')" >> $GITHUB_ENV
         echo "EXPIRES_AT=$(echo "$JSON_BODY" | jq -r '.data.expiresAt')" >> $GITHUB_ENV
 
-    - name: OTP Notification and Verification
+    - name: OTP Notification
       shell: bash
       run: |
         URL_QUERY="createdAt=${{ env.CREATED_AT }}&expiresAt=${{ env.EXPIRES_AT }}&uniqueKey=${{ env.UNIQUE_KEY }}&source=FileDownload"
         ENCODED_URL_QUERY=$(echo "$URL_QUERY" | jq -sRr @uri)
         echo "::notice ::The OTP code has been sent to your email address. Please enter the OTP with the reference code ${{ env.UNIQUE_KEY }} at https://dev.management.file-security.icredible.com/git-security/?$ENCODED_URL_QUERY"
-        
+
+    - name: OTP Verification
+      shell: bash
+      run: |       
         echo "Starting to poll for OTP confirmation..."
         
         EXPIRE_TIME_EPOCH=$(date -d "${{ env.EXPIRES_AT }}" +%s)
@@ -113,10 +115,9 @@ runs:
 
           if [ "$HTTP_STATUS" -eq 200 ]; then
             IS_CONFIRMED=$(echo "$JSON_BODY" | jq -r '.data' | tr -d '\r\n')
-            echo "$IS_CONFIRMED"
             if [ "$IS_CONFIRMED" == "true" ]; then
               echo "::notice title=Success!::OTP confirmation received. Continuing workflow."
-              exit 0 # Success!
+              exit 0
             fi
           else
             echo "::warning::Polling request failed with status $HTTP_STATUS. Body: $JSON_BODY"
@@ -132,21 +133,22 @@ runs:
     - name: Retrieve Backup
       shell: bash
       run: |
-
         RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://dev.api.file-security.icredible.com/restore/${{ inputs.file_version_id }}" \
         -H "Authorization: Bearer ${{ env.TOKEN }}" \
         -H "X-Verification-Key: 1" \
         -H "X-Unique-Key: ${{ env.UNIQUE_KEY }}"  -o repo.tar.zst.enc)
-        echo "Raw API Response: $RESPONSE"
+        
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
         JSON_BODY=$(echo "$RESPONSE" | head -n -1)
+        
         if [ "$HTTP_STATUS" -ne 200 ]; then
           echo "Failed to obtain backup file. Response: $RESPONSE"
           echo "Error: Received HTTP status $HTTP_STATUS"
           echo "Response: $JSON_BODY"
           exit 1
         fi
-        echo "Backup file retrieved successfully."
+        
+        echo "::notice title=Success!::Backup file retrieved successfully."
 
     - name: Decrypt and Extract Backup
       shell: bash
@@ -155,7 +157,7 @@ runs:
         openssl enc -d -aes-256-cbc -pbkdf2 -in repo.tar.zst.enc -out repo.tar.zst -pass pass:${{ inputs.encryption_password }}
         echo "Extracting repository backup..."        
         zstd -d repo.tar.zst -o repo.tar
-        tar -xf repo.tar
+        tar -xf repo.tar\
         rm -f repo.tar repo.tar.zst
         
         echo "Decryption and extraction complete."
@@ -169,6 +171,7 @@ runs:
           sudo apt install git-filter-repo -y
           git filter-repo --force --path .github/workflows --invert-paths
           TOKEN_TO_USE="${{ github.token }}"
+          echo "::warning title=Information About The Scope Of The Restoration ::The restore process was performed by deleting the .github/workflows/ directory from the backup. If you want to restore this directory, follow the steps in the marketplace and repeat the restore process with PAT."
         else
           TOKEN_TO_USE="${{ inputs.restore_github_token }}"
         fi
@@ -176,3 +179,5 @@ runs:
         git config user.name "myapp File Security"
         git config user.email "file-security@myapp.com"
         git push --mirror --force "https://x-access-token:${TOKEN_TO_USE}@github.com/${{ github.repository }}.git"
+        
+        echo "::notice title=Success!::The repository was successfully restore."
