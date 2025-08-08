@@ -111,16 +111,18 @@ runs:
             "uniqueKey": ${{ env.TOKEN }},
           }')
           
-          IS_CONFIRMED=$(echo "$RESPONSE" | jq -r '.data')
+          HTTP_STATUS=$(echo "$RAW_RESPONSE" | tail -n1)
+        JSON_BODY=$(echo "$RAW_RESPONSE" | head -n -1)
 
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+          IS_CONFIRMED=$(echo "$JSON_BODY" | jq -r '.data')
           if [ "$IS_CONFIRMED" == "true" ]; then
             echo "::notice title=Success!::OTP confirmation received. Continuing workflow."
-            exit 0
+            exit 0 # Success!
           fi
-          
-          echo "OTP not confirmed yet. Waiting 5 seconds..."
-          sleep 5
-        done
+        else
+          echo "::warning::Polling request failed with status $HTTP_STATUS. Body: $JSON_BODY"
+        fi
 
         echo "::error ::Timeout reached. No value was entered within the expected time range."
         exit 1
