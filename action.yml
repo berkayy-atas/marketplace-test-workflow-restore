@@ -16,6 +16,10 @@ inputs:
     description: 'Optional: Token to restore workflows (if provided, full mirror restore with workflows).'
     required: false
     default: ''
+  otp_request_type:
+    description: 'This value is “MAIL” by default. If you are using an authenticator, change this value to “AUTHENTICATOR”.'
+    required: false
+    default: 'MAIL'
 
 runs:
   using: 'composite'
@@ -71,7 +75,7 @@ runs:
           -d '{
             "Source": "FileDownload",
             "OtpGenerationMode": "Number",
-            "Type": "MAIL"
+            "Type": "${{ inputs.otp_request_type }}"
           }')
 
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
